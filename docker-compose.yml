@@ -1,0 +1,37 @@
+version: '3.9'
+
+services:
+  atividades_db:
+    image: mariadb:10.6
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: senha
+      MARIADB_DATABASE: atividades
+      MARIADB_USER: appuser
+      MARIADB_PASSWORD: apppassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  atividades_app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PORT: "3100"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+      DB_USER: "appuser"
+      DB_PASSWORD: "apppassword"
+      DB_NAME: "atividades"
+      JWT_SECRET: "uma_chave_secreta_segura"
+      JWT_EXPIRATION: "1d"
+      NODE_ENV: "production"
+    ports:
+      - "3100:3100"
+    command: "npm start"
+
+volumes:
+  mariadb_data:

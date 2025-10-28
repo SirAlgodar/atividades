@@ -1,0 +1,67 @@
+{
+  "name": "Sistema de Controle de Atividades",
+  "description": "Node.js + MariaDB (MySQL) com frontend estático",
+  "fields": {
+    "dbRootPassword": {
+      "type": "string",
+      "title": "DB Root Password",
+      "default": "senha"
+    },
+    "dbPassword": {
+      "type": "string",
+      "title": "DB User Password",
+      "default": "apppassword"
+    },
+    "dbUser": {
+      "type": "string",
+      "title": "DB User",
+      "default": "appuser"
+    },
+    "dbName": {
+      "type": "string",
+      "title": "DB Name",
+      "default": "atividades"
+    },
+    "jwtSecret": {
+      "type": "string",
+      "title": "JWT Secret",
+      "default": "uma_chave_secreta_segura"
+    },
+    "jwtExpiration": {
+      "type": "string",
+      "title": "JWT Expiration",
+      "default": "1d"
+    }
+  },
+  "services": [
+    {
+      "type": "mysql",
+      "data": {
+        "projectName": "atividades",
+        "serviceName": "db",
+        "rootPassword": "{{dbRootPassword}}",
+        "password": "{{dbPassword}}"
+      }
+    },
+    {
+      "type": "app",
+      "data": {
+        "projectName": "atividades",
+        "serviceName": "app",
+        "source": {
+          "type": "git",
+          "url": "https://github.com/SirAlgodar/atividades.git",
+          "dockerfile": "Dockerfile",
+          "context": "."
+        },
+        "ports": [
+          { "published": 3100, "target": 3100 }
+        ],
+        "env": "PORT=3100\nDB_HOST=db\nDB_PORT=3306\nDB_USER={{dbUser}}\nDB_PASSWORD={{dbPassword}}\nDB_NAME={{dbName}}\nJWT_SECRET={{jwtSecret}}\nJWT_EXPIRATION={{jwtExpiration}}",
+        "deploy": {
+          "command": "npm start"
+        }
+      }
+    }
+  ]
+}
