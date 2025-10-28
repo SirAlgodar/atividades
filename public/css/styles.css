@@ -1,0 +1,195 @@
+/* General Styles */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f8f9fa;
+  margin: 0;
+  padding: 0;
+}
+
+.container-fluid {
+  padding: 0;
+}
+
+/* Login Page */
+.login-container {
+  max-width: 400px;
+  margin: 100px auto;
+  padding: 30px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.login-logo {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background-color: #e9ecef;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-logo i {
+  font-size: 40px;
+  color: #6c757d;
+}
+
+/* Sidebar */
+.sidebar {
+  min-height: 100vh;
+  background-color: #343a40;
+  color: white;
+  padding-top: 20px;
+}
+
+.sidebar .nav-link {
+  color: rgba(255, 255, 255, 0.8);
+  padding: 10px 20px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+}
+
+.sidebar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.sidebar .nav-link.active {
+  background-color: #007bff;
+  color: white;
+}
+
+.sidebar .nav-link i {
+  margin-right: 10px;
+}
+
+.sidebar-header {
+  padding: 10px 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Dashboard */
+.dashboard-card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.dashboard-card .card-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 15px;
+}
+
+.dashboard-card .card-value {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.dashboard-card .card-title {
+  font-size: 14px;
+  color: #6c757d;
+}
+
+/* Activities Table */
+.activities-table th {
+  background-color: #f8f9fa;
+}
+
+.status-badge {
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-pending {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-completed {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.priority-high {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.priority-medium {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.priority-low {
+  background-color: #d1ecf1;
+  color: #0c5460;
+}
+
+/* Forms */
+.form-container {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.form-title {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* Filters */
+.filters-sidebar {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.filters-title {
+  margin-bottom: 15px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+/* Webhook Configuration */
+.webhook-config {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.webhook-fields {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    min-height: auto;
+  }
+  
+  .webhook-fields {
+    grid-template-columns: 1fr;
+  }
+}
