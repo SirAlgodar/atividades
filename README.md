@@ -17,7 +17,7 @@ Aplicação web para gerenciamento de atividades com cadastro, edição, filtros
 Crie um arquivo `.env` na raiz do projeto com as variáveis abaixo:
 
 ```
-PORT=3200
+PORT=3100
 NODE_ENV=development
 
 # Banco de Dados
@@ -38,10 +38,13 @@ JWT_EXPIRATION=1d
 
 2. Prepare o banco de dados (tabelas e admin padrão):
    - `npm run setup-db`
+   - Credenciais do admin padrão: email `admin`, senha `admin` (altere após o primeiro login).
+   - Setor padrão "Geral" é criado e vinculado ao admin.
+   - Configuração de webhook padrão é criada (inativa, sem auto envio).
 
 3. Execute em modo desenvolvimento (com nodemon):
    - `npm run dev`
-   - Acesse `http://localhost:3200/`
+   - Acesse `http://localhost:3100/`
 
 4. Execução em produção:
    - `npm start`
@@ -50,6 +53,13 @@ JWT_EXPIRATION=1d
 - `npm run dev`: inicia o servidor com `nodemon` (usa `PORT`).
 - `npm start`: inicia o servidor com `node`.
 - `npm run setup-db`: cria/atualiza tabelas e usuário admin padrão.
+
+## Seeds padrão e índices (setup-db)
+- Cria setor padrão "Geral" e vincula o usuário admin.
+- Cria configuração de webhook padrão (campos marcados, `active=false`, `auto_send=false`).
+- Adiciona índices úteis em `activities`:
+  - `idx_activities_date` (melhora filtros por data)
+  - `idx_activities_responsible` (melhora filtros por responsável)
 
 ## Endpoints Principais (API)
 - `POST /api/auth/login`: autenticação e obtenção de token.
