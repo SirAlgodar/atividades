@@ -9,6 +9,14 @@ Aplicação web para gerenciamento de atividades com cadastro, edição, filtros
 - Autenticação por `JWT`.
 - Configuração de `Webhook` para envio automático (opcional).
 
+### Novidades recentes
+- Login aceita `Usuário ou Email` no mesmo campo e prioriza o nome.
+- Comparação de login é case-insensitive e com `trim` (sem espaços nas extremidades).
+- Em caso de múltiplos usuários com o mesmo nome, o sistema prioriza quem está `can_login = true` e `active = true`.
+- Reset de senha redefine para o próprio nome do usuário (com `trim`).
+- Papel `Visualizador` pode criar atividades, sempre atribuídas a si mesmo.
+- Melhorias de estabilidade e logs de diagnóstico na autenticação (facilitam suporte a erro 401).
+
 ## Requisitos
 - Node.js >= 18
 - MariaDB >= 10.6
@@ -63,6 +71,9 @@ JWT_EXPIRATION=1d
 
 ## Endpoints Principais (API)
 - `POST /api/auth/login`: autenticação e obtenção de token.
+- `POST /api/auth/change-password`: alteração de senha (precisa estar autenticado).
+- `POST /api/auth/logout`: encerra a sessão atual.
+- `GET /api/auth/status`: retorna estado atual da sessão.
 - `GET /api/activities`: lista atividades (suporta filtros como status, responsável, datas, origem).
 - `POST /api/activities`: cria uma nova atividade.
 - `PUT /api/activities/:id`: atualiza uma atividade.
@@ -70,15 +81,39 @@ JWT_EXPIRATION=1d
 - `GET /api/activities/summary/dashboard`: dados de KPIs e gráficos do dashboard.
 - `GET/POST /api/webhook/config`: leitura e gravação da configuração de webhook.
 - `POST /api/reports/export`: exporta relatório (endpoint mock).
+ - `GET /api/users`: lista usuários.
+ - `POST /api/users`: cria usuário (por padrão, senha = nome, com `trim`).
+ - `PUT /api/users/:id`: atualiza usuário.
+ - `DELETE /api/users/:id`: exclui usuário.
+ - `POST /api/users/:id/reset-password`: reseta a senha para o nome atual (com `trim`).
 
 ## Acesso à Aplicação
 - Interface: `public/index.html`
 - CSS: `public/css/styles.css`
 - JS principal: `public/js/app.js`
+ - JS de autenticação: `public/js/auth.js`
+
+### Como realizar login
+- Campo único: "Usuário ou Email".
+- Senha padrão ao criar usuário sem senha: o próprio `name` (com `trim`).
+- Após reset de senha via Configurações → Usuários, a senha volta a ser o `name` atual.
+
+### Códigos de retorno comuns
+- `200 OK`: credenciais válidas.
+- `401 Unauthorized`: usuário não encontrado ou senha incorreta.
+- `403 Forbidden`: usuário inativo (`active=false`) ou sem permissão (`can_login=false`).
+
+### Dicas
+- Copie o `name` exatamente como aparece na lista de usuários para evitar espaços invisíveis.
+- Em caso de nomes duplicados, o login seleciona quem pode logar e está ativo; considere padronizar nomes únicos para usuários com acesso.
 
 ## Webhook (Opcional)
 - Configure em "Configurações → Webhook" dentro da aplicação.
 - Campos disponíveis: `title`, `description`, `status`, `origin`, `responsible_id`, `sector_id`, `duration_minutes`.
+
+### Envio automático
+- Se habilitado `auto_send=true` na configuração, o sistema registra a intenção de envio ao criar atividades.
+- Endpoint de teste disponível em `POST /api/webhook/test`.
 
 ---
 
