@@ -50,6 +50,14 @@ function loadApp() {
     </div>
   `;
 
+  // Aplica visibilidade por papel no menu
+  let currentUser = null;
+  try { currentUser = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  if (currentUser && currentUser.role !== 'admin') {
+    const settingsLink = document.querySelector('.nav-link[data-page="settings"]');
+    if (settingsLink) settingsLink.parentElement.style.display = 'none';
+  }
+
   // Add event listeners to navigation links
   document.querySelectorAll('.nav-link[data-page]').forEach(link => {
     link.addEventListener('click', (e) => {
@@ -486,6 +494,12 @@ function loadActivities(container) {
     </div>
   `;
   
+  // Controle de UI por papel
+  let currentUser = null;
+  try { currentUser = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  const role = currentUser ? currentUser.role : 'view';
+  // Visualizador pode criar atividades, mas somente para si; não ocultar o formulário
+
   // Add event listeners
   // Adicionando evento com setTimeout para garantir que o DOM esteja completamente carregado
   setTimeout(() => {
@@ -533,6 +547,23 @@ function loadActivities(container) {
     });
   } else {
     console.error('Botão new-responsible-btn não encontrado');
+  }
+  // Ocultar botão de novo responsável para papel view
+  if (role === 'view' && newResponsibleBtnEl) {
+    newResponsibleBtnEl.style.display = 'none';
+  }
+  // Para visualizador, travar o responsável para o próprio usuário
+  const responsibleSelectInit = document.getElementById('responsible');
+  if (role === 'view' && responsibleSelectInit) {
+    responsibleSelectInit.disabled = true;
+    setTimeout(() => {
+      try {
+        const cu = JSON.parse(localStorage.getItem('currentUser'));
+        if (cu && cu.id) {
+          responsibleSelectInit.value = String(cu.id);
+        }
+      } catch (e) {}
+    }, 500);
   }
   const saveResponsibleBtnEl = document.getElementById('save-responsible-btn');
   if (saveResponsibleBtnEl) {
@@ -593,6 +624,13 @@ function handleAddActivity(event) {
     responsible_id: responsible ? (responsible.value || null) : null,
     observation: observation ? observation.value : ''
   };
+  // Se papel for visualizador, garantir responsável como o próprio usuário
+  try {
+    const cu = JSON.parse(localStorage.getItem('currentUser'));
+    if (cu && cu.role === 'view') {
+      activityData.responsible_id = cu.id;
+    }
+  } catch (e) {}
   
   fetch('/api/activities', {
     method: 'POST',
@@ -627,6 +665,10 @@ function handleAddActivity(event) {
 // Load activities list
 function loadActivitiesList(filters = {}) {
   const activitiesList = document.getElementById('activities-list');
+  // Determina o papel do usuário atual para renderizar ações corretamente
+  let currentUser = null;
+  try { currentUser = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  const role = currentUser && currentUser.role ? currentUser.role : 'view';
   
   // Build query string from filters
   const queryParams = new URLSearchParams();
@@ -669,6 +711,23 @@ function loadActivitiesList(filters = {}) {
           const formattedCreated = createdAt ? createdAt.toLocaleString('pt-BR') : '-';
           const formattedUpdated = updatedAt ? updatedAt.toLocaleString('pt-BR') : '-';
 
+          // Renderizar botões de ação conforme papel
+          let actionsHtml = '';
+          if (role === 'admin' || role === 'editor') {
+            actionsHtml += `
+              <button class="btn btn-sm btn-outline-primary edit-activity" data-id="${activity.id}">
+                <i class="bi bi-pencil"></i>
+              </button>
+            `;
+          }
+          if (role === 'admin') {
+            actionsHtml += `
+              <button class="btn btn-sm btn-outline-danger delete-activity" data-id="${activity.id}">
+                <i class="bi bi-trash"></i>
+              </button>
+            `;
+          }
+
           row.innerHTML = `
             <td>${activity.origin}</td>
             <td>${activity.activity}</td>
@@ -687,14 +746,7 @@ function loadActivitiesList(filters = {}) {
               </span>
             </td>
             <td>${activity.responsible_name || '-'}</td>
-            <td>
-              <button class="btn btn-sm btn-outline-primary edit-activity" data-id="${activity.id}">
-                <i class="bi bi-pencil"></i>
-              </button>
-              <button class="btn btn-sm btn-outline-danger delete-activity" data-id="${activity.id}">
-                <i class="bi bi-trash"></i>
-              </button>
-            </td>
+            <td>${actionsHtml}</td>
           `;
           
           activitiesList.appendChild(row);
@@ -775,8 +827,9 @@ function handleAddResponsible() {
     const userData = {
       name,
       email,
-      role: 'user',
+      role: 'view',
       active: true,
+      can_login: false,
       sector_id: sectorData.id
     };
     
@@ -1108,6 +1161,31 @@ function loadSettings(container) {
 
   const webhookPane = document.getElementById('tab-webhook');
   const usersPane = document.getElementById('tab-users');
+  let currentUser = null;
+  try { currentUser = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  let isAdmin = !!(currentUser && currentUser.role === 'admin');
+  // Confirmar papel via sessão se não encontrado no localStorage
+  if (!isAdmin) {
+    fetch('/api/auth/status')
+      .then(r => r.json())
+      .then(s => {
+        if (s && s.isAuthenticated && s.user && s.user.role === 'admin') {
+          isAdmin = true;
+          const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
+          if (usersTabLink) usersTabLink.parentElement.style.display = '';
+        } else {
+          const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
+          if (usersTabLink) usersTabLink.parentElement.style.display = 'none';
+        }
+      })
+      .catch(() => {
+        const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
+        if (usersTabLink) usersTabLink.parentElement.style.display = 'none';
+      });
+  } else {
+    const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
+    if (usersTabLink) usersTabLink.parentElement.style.display = '';
+  }
   
   // Load default tab content
   loadWebhookConfig(webhookPane);
@@ -1123,13 +1201,24 @@ function loadSettings(container) {
       // hide all panes
       webhookPane.style.display = 'none';
       usersPane.style.display = 'none';
+      // garantir conformidade com Bootstrap: remover classe active de panes
+      webhookPane.classList.remove('active');
+      usersPane.classList.remove('active');
 
       if (target === 'webhook') {
         webhookPane.style.display = '';
+        webhookPane.classList.add('active');
         loadWebhookConfig(webhookPane);
       } else if (target === 'users') {
-        usersPane.style.display = '';
-        loadUsersSettings(usersPane);
+        if (isAdmin) {
+          usersPane.style.display = '';
+          usersPane.classList.add('active');
+          loadUsersSettings(usersPane);
+        } else {
+          usersPane.style.display = '';
+          usersPane.classList.add('active');
+          usersPane.innerHTML = '<p class="text-muted">Sem permissão para acessar esta aba.</p>';
+        }
       }
     });
   });
@@ -1342,9 +1431,310 @@ function loadReports(container) {
 }
 
 function loadUsersSettings(container) {
-  if (container) {
-    container.innerHTML = '<h2>Usuários</h2><p>Funcionalidade em desenvolvimento</p>';
-  }
+  if (!container) return;
+  container.innerHTML = `
+    <h4 class="mb-3">Usuários com acesso</h4>
+    <div class="mb-3">
+      <form id="new-access-user-form" class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Nome</label>
+          <input type="text" class="form-control" id="access-name" required />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control" id="access-email" required />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Papel</label>
+          <select class="form-select" id="access-role" required>
+            <option value="view">Visualizador</option>
+            <option value="editor">Editor</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div class="col-md-12 text-end">
+          <button type="submit" class="btn btn-primary">Adicionar Usuário de Acesso</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Email</th>
+            <th>Papel</th>
+            <th>Ativo</th>
+            <th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="access-users-list"></tbody>
+      </table>
+    </div>
+    
+    <!-- Modal de edição de usuário -->
+    <div id="edit-user-modal" class="modal" tabindex="-1" style="display:none;">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar Usuário</h5>
+            <button type="button" class="btn-close" id="edit-user-close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="edit-user-form" class="row g-3">
+              <input type="hidden" id="edit-user-id" />
+              <div class="col-md-6">
+                <label class="form-label">Nome</label>
+                <input type="text" id="edit-user-name" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input type="email" id="edit-user-email" class="form-control" required />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Papel</label>
+                <select id="edit-user-role" class="form-select" required>
+                  <option value="view">Visualizador</option>
+                  <option value="editor">Editor</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Ativo</label>
+                <select id="edit-user-active" class="form-select">
+                  <option value="true">Sim</option>
+                  <option value="false">Não</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Pode logar</label>
+                <select id="edit-user-can-login" class="form-select">
+                  <option value="true">Sim</option>
+                  <option value="false">Não</option>
+                </select>
+              </div>
+              <div class="col-12 d-flex justify-content-between mt-3">
+                <button type="button" class="btn btn-outline-danger" id="delete-user-btn">Deletar Usuário</button>
+                <div>
+                  <button type="button" class="btn btn-warning me-2" id="reset-password-btn">Resetar Senha</button>
+                  <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmação de exclusão -->
+    <div id="confirm-delete-user-modal" class="modal" tabindex="-1" style="display:none;">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Confirmar exclusão</h5>
+            <button type="button" class="btn-close" id="confirm-delete-close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Tem certeza que deseja deletar este usuário?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="cancel-delete-user-btn">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="confirm-delete-user-btn">Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Listar apenas usuários com can_login = true
+  fetch('/api/users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }})
+    .then(r => r.json())
+    .then(users => {
+      const listEl = document.getElementById('access-users-list');
+      listEl.innerHTML = '';
+      const accessUsers = Array.isArray(users) ? users.filter(u => !!u.can_login && u.role !== 'admin') : [];
+      if (accessUsers.length === 0) {
+        listEl.innerHTML = `
+          <tr>
+            <td colspan="4" class="text-muted text-center">Nenhum usuário com acesso encontrado</td>
+          </tr>
+        `;
+        return;
+      }
+      accessUsers.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.name}</td>
+          <td>${u.email}</td>
+          <td>${u.role}</td>
+          <td>${u.active ? 'Sim' : 'Não'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary edit-user-btn" data-id="${u.id}">
+              <i class="bi bi-pencil"></i> Editar
+            </button>
+          </td>
+        `;
+        listEl.appendChild(tr);
+      });
+      // Abrir modal de edição
+      document.querySelectorAll('.edit-user-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const user = accessUsers.find(x => String(x.id) === String(id));
+          if (!user) return;
+          document.getElementById('edit-user-id').value = user.id;
+          document.getElementById('edit-user-name').value = user.name || '';
+          document.getElementById('edit-user-email').value = user.email || '';
+          document.getElementById('edit-user-role').value = user.role || 'view';
+          document.getElementById('edit-user-active').value = user.active ? 'true' : 'false';
+          document.getElementById('edit-user-can-login').value = user.can_login ? 'true' : 'false';
+          document.getElementById('edit-user-modal').style.display = 'block';
+        });
+      });
+      const closeBtn = document.getElementById('edit-user-close');
+      if (closeBtn) closeBtn.addEventListener('click', () => {
+        document.getElementById('edit-user-modal').style.display = 'none';
+      });
+      const editForm = document.getElementById('edit-user-form');
+      if (editForm) editForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = document.getElementById('edit-user-id').value;
+        const payload = {
+          name: document.getElementById('edit-user-name').value,
+          email: document.getElementById('edit-user-email').value,
+          role: document.getElementById('edit-user-role').value,
+          active: document.getElementById('edit-user-active').value === 'true',
+          can_login: document.getElementById('edit-user-can-login').value === 'true'
+        };
+        fetch(`/api/users/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(payload)
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp && resp.id) {
+              alert('Usuário atualizado com sucesso');
+              document.getElementById('edit-user-modal').style.display = 'none';
+              loadUsersSettings(container);
+            } else {
+              alert(resp.message || 'Erro ao atualizar usuário');
+            }
+          })
+          .catch(err => {
+            console.error('Erro ao atualizar usuário:', err);
+            alert('Erro ao conectar ao servidor');
+          });
+      });
+      const deleteBtn = document.getElementById('delete-user-btn');
+      if (deleteBtn) deleteBtn.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-user-modal');
+        if (confirmModal) confirmModal.style.display = 'block';
+      });
+      const confirmDeleteBtn = document.getElementById('confirm-delete-user-btn');
+      if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', () => {
+        const id = document.getElementById('edit-user-id').value;
+        if (!id) return;
+        fetch(`/api/users/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp && resp.success) {
+              alert('Usuário excluído com sucesso');
+              document.getElementById('edit-user-modal').style.display = 'none';
+              document.getElementById('confirm-delete-user-modal').style.display = 'none';
+              loadUsersSettings(container);
+            } else {
+              alert(resp.message || 'Erro ao excluir usuário');
+            }
+          })
+          .catch(err => {
+            console.error('Erro ao excluir usuário:', err);
+            alert('Erro ao conectar ao servidor');
+          });
+      });
+      const cancelDeleteBtn = document.getElementById('cancel-delete-user-btn');
+      if (cancelDeleteBtn) cancelDeleteBtn.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-user-modal');
+        if (confirmModal) confirmModal.style.display = 'none';
+      });
+      const confirmDeleteClose = document.getElementById('confirm-delete-close');
+      if (confirmDeleteClose) confirmDeleteClose.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-user-modal');
+        if (confirmModal) confirmModal.style.display = 'none';
+      });
+      const resetBtn = document.getElementById('reset-password-btn');
+      if (resetBtn) resetBtn.addEventListener('click', () => {
+        const id = document.getElementById('edit-user-id').value;
+        if (!id) return;
+        fetch(`/api/users/${id}/reset-password`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp && resp.success) {
+              alert('Senha resetada para o padrão (nome do usuário).');
+            } else {
+              alert(resp.message || 'Erro ao resetar senha');
+            }
+          })
+          .catch(err => {
+            console.error('Erro ao resetar senha:', err);
+            alert('Erro ao conectar ao servidor');
+          });
+      });
+    })
+    .catch(err => {
+      const listEl = document.getElementById('access-users-list');
+      if (listEl) {
+        listEl.innerHTML = `
+          <tr>
+            <td colspan="4" class="text-danger text-center">Erro ao carregar usuários de acesso</td>
+          </tr>
+        `;
+      }
+      console.error('Erro ao carregar usuários de acesso:', err);
+    });
+
+  const formEl = document.getElementById('new-access-user-form');
+  formEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const payload = {
+      name: document.getElementById('access-name').value,
+      email: document.getElementById('access-email').value,
+      role: document.getElementById('access-role').value,
+      active: true,
+      can_login: true
+    };
+    fetch('/api/users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(r => r.json())
+      .then(resp => {
+        if (resp.id) {
+          alert('Usuário de acesso criado');
+          loadUsersSettings(container);
+        } else {
+          alert(resp.message || 'Erro ao criar usuário');
+        }
+      })
+      .catch(err => {
+        console.error('Erro ao criar usuário de acesso:', err);
+        alert('Erro ao conectar ao servidor');
+      });
+  });
 }
 
 function loadImportExport(container) {

@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
   try {
     const conn = await db.getConnection();
     // Removendo o filtro de active para mostrar todos os usuários
-    const users = await conn.query('SELECT id, name, email, role, active, sector_id FROM users');
+    const users = await conn.query('SELECT id, name, email, role, active, can_login, sector_id FROM users');
     conn.release();
     
     // Converter BigInt para Number
@@ -28,31 +28,34 @@ router.get('/', async (req, res) => {
 
 // Create new user
 router.post('/', async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, can_login, active, sector_id } = req.body;
   
   try {
     const conn = await db.getConnection();
+    const cleanName = name ? String(name).trim() : '';
+    const cleanEmail = email ? String(email).trim() : '';
     
     // Check if email already exists
-    const [existingUser] = await conn.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [existingUser] = await conn.query('SELECT * FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))', [cleanEmail]);
     
     if (existingUser) {
       conn.release();
       return res.status(400).json({ message: 'Email já cadastrado' });
     }
     
-    // Use default password if not provided (for responsibles created from activity form)
+    // Default password: user's name (trim) when not provided
     let hashedPassword;
     if (password) {
       hashedPassword = await bcrypt.hash(password, 10);
     } else {
-      hashedPassword = await bcrypt.hash('senha123', 10);
+      const defaultPassword = cleanName || 'senha123';
+      hashedPassword = await bcrypt.hash(defaultPassword, 10);
     }
     
     // Insert user
     const result = await conn.query(
-      'INSERT INTO users (name, email, password, role, active, sector_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, email, hashedPassword, role || 'user', true, req.body.sector_id || null]
+      'INSERT INTO users (name, email, password, role, active, can_login, sector_id, password_changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [cleanName, cleanEmail, hashedPassword, role || 'view', active !== undefined ? !!active : true, can_login !== undefined ? !!can_login : false, sector_id || null, false]
     );
     
     conn.release();
@@ -67,12 +70,34 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Reset user password to default (user's name) and mark as not changed
+router.post('/:id/reset-password', async (req, res) => {
+  try {
+    const conn = await db.getConnection();
+    const [existingUser] = await conn.query('SELECT id, name FROM users WHERE id = ?', [req.params.id]);
+    if (!existingUser) {
+      conn.release();
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    const defaultPassword = (existingUser.name ? String(existingUser.name).trim() : '') || 'senha123';
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+    await conn.query('UPDATE users SET password = ?, password_changed = false WHERE id = ?', [hashedPassword, req.params.id]);
+    conn.release();
+    res.json({ success: true, message: 'Senha resetada para o padrão (nome do usuário)' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao resetar senha do usuário' });
+  }
+});
+
 // Update user
 router.put('/:id', async (req, res) => {
-  const { name, email, role, active } = req.body;
+  const { name, email, role, active, can_login, sector_id } = req.body;
   
   try {
     const conn = await db.getConnection();
+    const cleanName = name ? String(name).trim() : '';
+    const cleanEmail = email ? String(email).trim() : '';
     
     // Check if user exists
     const [existingUser] = await conn.query('SELECT * FROM users WHERE id = ?', [req.params.id]);
@@ -84,8 +109,8 @@ router.put('/:id', async (req, res) => {
     
     // Update user
     await conn.query(
-      'UPDATE users SET name = ?, email = ?, role = ?, active = ? WHERE id = ?',
-      [name, email, role, active, req.params.id]
+      'UPDATE users SET name = ?, email = ?, role = ?, active = ?, can_login = ?, sector_id = ? WHERE id = ?',
+      [cleanName, cleanEmail, role, active, can_login, sector_id || null, req.params.id]
     );
     
     conn.release();

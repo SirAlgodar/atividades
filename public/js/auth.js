@@ -7,6 +7,7 @@ function checkAuthStatus() {
     .then(data => {
       if (data.isAuthenticated) {
         // User is authenticated
+        try { localStorage.setItem('currentUser', JSON.stringify(data.user)); } catch (e) {}
         if (!data.user.passwordChanged) {
           // Password needs to be changed
           showChangePasswordForm();
@@ -40,8 +41,8 @@ function showLoginForm() {
       
       <form id="login-form">
         <div class="mb-3">
-          <label for="username" class="form-label">Usuário</label>
-          <input type="text" class="form-control" id="username" placeholder="Digite seu usuário" required>
+          <label for="username" class="form-label">Usuário ou Email</label>
+          <input type="text" class="form-control" id="username" placeholder="Digite seu usuário ou email" required>
         </div>
         <div class="mb-3">
           <label for="password" class="form-label">Senha</label>
@@ -60,7 +61,7 @@ function showLoginForm() {
 function handleLogin(event) {
   event.preventDefault();
   
-  const username = document.getElementById('username').value;
+  const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value;
   const alertElement = document.getElementById('login-alert');
   
@@ -79,6 +80,7 @@ function handleLogin(event) {
       if (data.token) {
         // Store token in localStorage
         localStorage.setItem('token', data.token);
+        try { localStorage.setItem('currentUser', JSON.stringify(data.user)); } catch (e) {}
         
         if (!data.user.passwordChanged) {
           // Password needs to be changed

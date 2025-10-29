@@ -84,6 +84,13 @@ router.get('/', async (req, res) => {
       params.push(req.query.responsible_id);
     }
     
+    // Restrição por papel: não-admin vê somente próprias/atribuídas
+    const sessionUser = req.session && req.session.user ? req.session.user : null;
+    if (sessionUser && sessionUser.role !== 'admin') {
+      query += ' AND (a.created_by = ? OR a.responsible_id = ?)';
+      params.push(sessionUser.id, sessionUser.id);
+    }
+
     // Order by date desc
     query += ' ORDER BY a.date DESC';
     
@@ -135,14 +142,23 @@ router.post('/', async (req, res) => {
   } = req.body;
   
   try {
+    // Permissão: qualquer usuário autenticado pode criar; viewers só criam para si
+    const sessionUser = req.session && req.session.user ? req.session.user : null;
+    if (!sessionUser) {
+      return res.status(401).json({ message: 'Não autenticado' });
+    }
+
     const conn = await db.getConnection();
     
     // Insert activity
+    // Enforce responsible_id for viewers
+    const finalResponsibleId = (sessionUser.role === 'view') ? sessionUser.id : responsible_id;
+
     const result = await conn.query(
       `INSERT INTO activities 
-       (origin, activity, date, duration, status, priority, responsible_id, observation) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [origin, activity, date, duration, status, priority, responsible_id, observation]
+       (origin, activity, date, duration, status, priority, responsible_id, created_by, observation) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [origin, activity, date, duration, status, priority, finalResponsibleId, sessionUser.id, observation]
     );
     
     // Check webhook configuration for auto-send
@@ -180,6 +196,11 @@ router.put('/:id', async (req, res) => {
   } = req.body;
   
   try {
+    const sessionUser = req.session && req.session.user ? req.session.user : null;
+    if (!sessionUser) {
+      return res.status(401).json({ message: 'Não autenticado' });
+    }
+
     const conn = await db.getConnection();
     
     // Check if activity exists
@@ -190,6 +211,19 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Atividade não encontrada' });
     }
     
+    // Autorização por papel
+    if (sessionUser.role === 'view') {
+      conn.release();
+      return res.status(403).json({ message: 'Permissão negada' });
+    }
+    if (sessionUser.role !== 'admin') {
+      const isOwnerOrResponsible = (existingActivity.created_by === sessionUser.id) || (existingActivity.responsible_id === sessionUser.id);
+      if (!isOwnerOrResponsible) {
+        conn.release();
+        return res.status(403).json({ message: 'Permissão negada' });
+      }
+    }
+
     // Prepare values, allowing partial updates and duration sum
     const newOrigin = origin !== undefined ? origin : existingActivity.origin;
     const newActivity = activity !== undefined ? activity : existingActivity.activity;
@@ -246,6 +280,14 @@ router.put('/:id', async (req, res) => {
 // Delete activity
 router.delete('/:id', async (req, res) => {
   try {
+    const sessionUser = req.session && req.session.user ? req.session.user : null;
+    if (!sessionUser) {
+      return res.status(401).json({ message: 'Não autenticado' });
+    }
+    if (sessionUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Somente administradores podem excluir atividades' });
+    }
+
     const conn = await db.getConnection();
     
     // Check if activity exists
@@ -274,17 +316,25 @@ router.delete('/:id', async (req, res) => {
 router.get('/summary/dashboard', async (req, res) => {
   try {
     const conn = await db.getConnection();
+    const sessionUser = req.session && req.session.user ? req.session.user : null;
+    const whereClause = (sessionUser && sessionUser.role !== 'admin') ? 'WHERE created_by = ? OR responsible_id = ?' : '';
+    const whereParams = (sessionUser && sessionUser.role !== 'admin') ? [sessionUser.id, sessionUser.id] : [];
     
     // Get total activities count
-    const [totalResult] = await conn.query('SELECT COUNT(*) as total FROM activities');
+    const [totalResult] = await conn.query(`SELECT COUNT(*) as total FROM activities ${whereClause}`, whereParams);
     const totalActivities = Number(totalResult.total || 0);
     
     // Get completed activities count
-    const [completedResult] = await conn.query("SELECT COUNT(*) as total FROM activities WHERE status = 'concluida'");
+    const [completedResult] = await conn.query(
+      whereClause
+        ? `SELECT COUNT(*) as total FROM activities ${whereClause} AND status = 'concluida'`
+        : `SELECT COUNT(*) as total FROM activities WHERE status = 'concluida'`,
+      whereParams
+    );
     const completedActivities = Number(completedResult.total || 0);
     
     // Calculate total hours
-    const durationResults = await conn.query('SELECT duration FROM activities');
+    const durationResults = await conn.query(`SELECT duration FROM activities ${whereClause}`, whereParams);
     let totalMinutes = 0;
     
     durationResults.forEach(item => {
@@ -303,9 +353,10 @@ router.get('/summary/dashboard', async (req, res) => {
           SUBSTRING_INDEX(duration, ':', -1)
         ) / 60 as hours
       FROM activities
+      ${whereClause ? whereClause : ''}
       GROUP BY DATE_FORMAT(date, '%Y-%m')
       ORDER BY month
-    `);
+    `, whereParams);
     const hoursByMonth = hoursByMonthRaw.map(r => ({
       month: r.month,
       hours: Number(r.hours)
@@ -315,9 +366,10 @@ router.get('/summary/dashboard', async (req, res) => {
     const activitiesByOriginRaw = await conn.query(`
       SELECT origin, COUNT(*) as count
       FROM activities
+      ${whereClause ? whereClause : ''}
       GROUP BY origin
       ORDER BY count DESC
-    `);
+    `, whereParams);
     const activitiesByOrigin = activitiesByOriginRaw.map(r => ({
       origin: r.origin,
       count: Number(r.count)

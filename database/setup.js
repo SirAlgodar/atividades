@@ -1,6 +1,6 @@
-require('dotenv').config();
-const mariadb = require('mariadb');
-const bcrypt = require('bcryptjs');
+import 'dotenv/config';
+import mariadb from 'mariadb';
+import bcrypt from 'bcryptjs';
 
 async function setupDatabase() {
   let conn;
@@ -16,15 +16,16 @@ async function setupDatabase() {
     await conn.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME}`);
     await conn.query(`USE ${process.env.DB_NAME}`);
 
-    // Create users table
+    // Create users table (roles: view/editor/admin) and can_login flag
     await conn.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INT PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(100) NOT NULL,
         email VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(100) NOT NULL,
-        role ENUM('admin', 'user') DEFAULT 'user',
+        role ENUM('view', 'editor', 'admin') DEFAULT 'view',
         active BOOLEAN DEFAULT true,
+        can_login BOOLEAN DEFAULT false,
         password_changed BOOLEAN DEFAULT false,
         sector_id INT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -47,6 +48,63 @@ async function setupDatabase() {
       }
     }
 
+    // Ensure can_login column exists in users
+    const [canLoginColRow] = await conn.query(`
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = ?
+        AND TABLE_NAME = 'users'
+        AND COLUMN_NAME = 'can_login'
+    `, [process.env.DB_NAME]);
+    if (!canLoginColRow || Number(canLoginColRow.cnt) === 0) {
+      try {
+        await conn.query('ALTER TABLE users ADD COLUMN can_login BOOLEAN DEFAULT false');
+      } catch (e) {
+        console.warn('Skipping users.can_login add:', e.message);
+      }
+    }
+
+    // Migrate role enum to view/editor/admin and map legacy 'user' to 'editor'
+    try {
+      const [roleColInfo] = await conn.query(`
+        SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
+      `, [process.env.DB_NAME]);
+      const columnType = roleColInfo ? String(roleColInfo.COLUMN_TYPE || '') : '';
+      const hasUser = columnType.includes("'user'");
+      const hasView = columnType.includes("'view'");
+      const hasEditor = columnType.includes("'editor'");
+      const hasAdmin = columnType.includes("'admin'");
+
+      // If legacy enum missing new roles, transition via superset including 'user'
+      if (!hasView || !hasEditor) {
+        try {
+          await conn.query("ALTER TABLE users MODIFY COLUMN role ENUM('user','view','editor','admin') DEFAULT 'view'");
+        } catch (e) {
+          console.warn('Skipping broad enum modification (user,view,editor,admin):', e.message);
+        }
+        try {
+          await conn.query("UPDATE users SET role='editor' WHERE role='user'");
+        } catch (e) {
+          console.warn('Skipping role value migration from user->editor:', e.message);
+        }
+        try {
+          await conn.query("ALTER TABLE users MODIFY COLUMN role ENUM('view','editor','admin') DEFAULT 'view'");
+        } catch (e) {
+          console.warn('Skipping final enum modification (view,editor,admin):', e.message);
+        }
+      } else {
+        // Ensure final enum ordering and default even if already present
+        try {
+          await conn.query("ALTER TABLE users MODIFY COLUMN role ENUM('view','editor','admin') DEFAULT 'view'");
+        } catch (e) {
+          console.warn('Skipping enum normalization:', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Role enum inspection/migration failed:', e.message);
+    }
+
     // Create activities table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS activities (
@@ -58,12 +116,31 @@ async function setupDatabase() {
         status ENUM('pendente', 'concluida') DEFAULT 'pendente',
         priority ENUM('baixa', 'media', 'alta') DEFAULT 'media',
         responsible_id INT,
+        created_by INT NULL,
         observation TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (responsible_id) REFERENCES users(id)
+        FOREIGN KEY (responsible_id) REFERENCES users(id),
+        FOREIGN KEY (created_by) REFERENCES users(id)
       )
     `);
+
+    // Ensure created_by column exists in activities for legacy installs
+    const [createdByColRow] = await conn.query(`
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = ?
+        AND TABLE_NAME = 'activities'
+        AND COLUMN_NAME = 'created_by'
+    `, [process.env.DB_NAME]);
+    if (!createdByColRow || Number(createdByColRow.cnt) === 0) {
+      try {
+        await conn.query('ALTER TABLE activities ADD COLUMN created_by INT NULL');
+        await conn.query('ALTER TABLE activities ADD CONSTRAINT fk_activities_created_by FOREIGN KEY (created_by) REFERENCES users(id)');
+      } catch (e) {
+        console.warn('Skipping activities.created_by add:', e.message);
+      }
+    }
 
     // Indexes for performance
     try {
@@ -150,19 +227,24 @@ async function setupDatabase() {
       }
     }
 
-    // Check if admin user exists
-    const [adminExists] = await conn.query("SELECT * FROM users WHERE email = 'admin'");
-    
-    // Create default admin user if not exists
-    if (!adminExists) {
-      const hashedPassword = await bcrypt.hash('admin', 10);
-      const [defaultSector] = await conn.query("SELECT id FROM sectors WHERE name = 'Geral' LIMIT 1");
-      const defaultSectorId = defaultSector ? defaultSector.id : null;
-      await conn.query(`
-        INSERT INTO users (name, email, password, role, password_changed, sector_id) 
-        VALUES ('Administrator', 'admin', ?, 'admin', false, ?)
-      `, [hashedPassword, defaultSectorId]);
-      console.log('Default admin user created');
+    // Ensure admin user exists and has access enabled
+    try {
+      const [adminExists] = await conn.query("SELECT * FROM users WHERE email = 'admin'");
+      if (!adminExists) {
+        const hashedPassword = await bcrypt.hash('admin', 10);
+        const [defaultSector] = await conn.query("SELECT id FROM sectors WHERE name = 'Geral' LIMIT 1");
+        const defaultSectorId = defaultSector ? defaultSector.id : null;
+        await conn.query(`
+          INSERT INTO users (name, email, password, role, active, can_login, password_changed, sector_id) 
+          VALUES ('Administrator', 'admin', ?, 'admin', true, true, false, ?)
+        `, [hashedPassword, defaultSectorId]);
+        console.log('Default admin user created');
+      } else {
+        // Normalize existing admin to have access enabled
+        await conn.query("UPDATE users SET active = true, can_login = true, role = 'admin' WHERE email = 'admin'");
+      }
+    } catch (e) {
+      console.warn('Admin user ensure failed:', e.message);
     }
 
     console.log('Database setup completed successfully');

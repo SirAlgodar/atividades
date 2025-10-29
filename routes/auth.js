@@ -10,18 +10,55 @@ router.post('/login', async (req, res) => {
   
   try {
     const conn = await db.getConnection();
-    const rows = await conn.query('SELECT * FROM users WHERE email = ?', [username]);
+    // Aceitar login tanto por email quanto por nome
+    // - case-insensitive usando LOWER
+    // - com TRIM para remover espaços
+    const loginKey = (username || '').trim();
+    // Preferir match por nome; se não encontrar, tentar por email
+    let rows = await conn.query(
+      `SELECT * FROM users
+       WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+       ORDER BY can_login DESC, active DESC, id DESC
+       LIMIT 1`,
+      [loginKey]
+    );
+    let user = rows && rows.length > 0 ? rows[0] : null;
+    if (!user) {
+      rows = await conn.query(
+        `SELECT * FROM users
+         WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+         LIMIT 1`,
+        [loginKey]
+      );
+      user = rows && rows.length > 0 ? rows[0] : null;
+    }
     conn.release();
     
-    if (rows.length === 0) {
+    // Logs de diagnóstico para entender 401
+    try {
+      console.log('[AUTH] Tentativa de login:', { loginKey });
+      console.log('[AUTH] Resultado busca usuário:', { found: !!user, userId: user ? user.id : null, name: user ? user.name : null, email: user ? user.email : null });
+    } catch (e) {}
+
+    if (!user) {
       return res.status(401).json({ message: 'Credenciais inválidas' });
     }
     
-    const user = rows[0];
     const isMatch = await bcrypt.compare(password, user.password);
     
+    try { console.log('[AUTH] Comparação de senha:', { isMatch }); } catch (e) {}
+
     if (!isMatch) {
       return res.status(401).json({ message: 'Credenciais inválidas' });
+    }
+
+    // Check if user is allowed to login
+    try { console.log('[AUTH] Flags de acesso:', { active: !!user.active, can_login: !!user.can_login }); } catch (e) {}
+    if (!user.active) {
+      return res.status(403).json({ message: 'Usuário inativo' });
+    }
+    if (!user.can_login) {
+      return res.status(403).json({ message: 'Usuário sem permissão de acesso à aplicação' });
     }
     
     // Create token
@@ -37,6 +74,8 @@ router.post('/login', async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      can_login: !!user.can_login,
+      active: !!user.active,
       passwordChanged: user.password_changed
     };
     
@@ -47,6 +86,8 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        can_login: !!user.can_login,
+        active: !!user.active,
         passwordChanged: user.password_changed
       }
     });
