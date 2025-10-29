@@ -40,7 +40,9 @@
         "projectName": "atividades",
         "serviceName": "db",
         "rootPassword": "{{dbRootPassword}}",
-        "password": "{{dbPassword}}"
+        "password": "{{dbPassword}}",
+        "user": "{{dbUser}}",
+        "database": "{{dbName}}"
       }
     },
     {
@@ -51,8 +53,7 @@
         "source": {
           "type": "git",
           "url": "https://github.com/SirAlgodar/atividades.git",
-          "dockerfile": "Dockerfile",
-          "context": "."
+          "branch": "main"
         },
         "ports": [
           { "published": 3100, "target": 3100 }

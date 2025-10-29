@@ -1,0 +1,25 @@
+{
+  "services": [
+    {
+      "type": "app",
+      "data": {
+        "projectName": "atividades",
+        "serviceName": "app",
+        "source": {
+          "type": "git",
+          "url": "https://github.com/SirAlgodar/atividades.git",
+          "branch": "main",
+          "dockerfile": "Dockerfile",
+          "context": "."
+        },
+        "ports": [
+          { "published": "{{port}}", "target": "{{port}}" }
+        ],
+        "env": "PORT={{port}}\nDB_HOST={{dbHost}}\nDB_PORT={{dbPort}}\nDB_USER={{dbUser}}\nDB_PASSWORD={{dbPassword}}\nDB_NAME={{dbName}}\nJWT_SECRET={{jwtSecret}}\nJWT_EXPIRATION={{jwtExpiration}}",
+        "deploy": {
+          "command": "npm start"
+        }
+      }
+    }
+  ]
+}

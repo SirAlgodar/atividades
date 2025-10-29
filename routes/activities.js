@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 
+// Helper to convert BigInt values to Number recursively for JSON responses
+function toPlain(value) {
+  if (value === null || value === undefined) return value;
+  const t = typeof value;
+  if (t === 'bigint') return Number(value);
+  if (Array.isArray(value)) return value.map(v => toPlain(v));
+  if (t === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) {
+      out[k] = toPlain(value[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
 function durationToMinutes(str) {
   if (!str) return 0;
   const [h, m] = String(str).split(':').map(Number);
@@ -74,7 +90,7 @@ router.get('/', async (req, res) => {
     const activities = await conn.query(query, params);
     conn.release();
     
-    res.json(activities);
+    res.json(toPlain(activities));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao buscar atividades' });
@@ -98,7 +114,7 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Atividade não encontrada' });
     }
     
-    res.json(activity);
+    res.json(toPlain(activity));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao buscar atividade' });
@@ -140,7 +156,7 @@ router.post('/', async (req, res) => {
     conn.release();
     
     res.status(201).json({ 
-      id: result.insertId,
+      id: Number(result.insertId),
       message: 'Atividade criada com sucesso' 
     });
   } catch (err) {
@@ -220,7 +236,7 @@ router.put('/:id', async (req, res) => {
        WHERE a.id = ?`,
       [req.params.id]
     );
-    res.json(updated);
+    res.json(toPlain(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao atualizar atividade' });

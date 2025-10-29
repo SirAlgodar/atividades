@@ -28,12 +28,7 @@ function loadApp() {
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="#" data-page="users">
-                <i class="bi bi-people"></i> Usuários
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="#" data-page="webhook">
+              <a class="nav-link" href="#" data-page="settings">
                 <i class="bi bi-gear"></i> Configurações
               </a>
             </li>
@@ -98,14 +93,11 @@ function loadPage(page) {
     case 'reports':
       loadReports(contentArea);
       break;
-    case 'users':
-      loadUsers(contentArea);
-      break;
     case 'import-export':
       loadImportExport(contentArea);
       break;
-    case 'webhook':
-      loadWebhookConfig(contentArea);
+    case 'settings':
+      loadSettings(contentArea);
       break;
     default:
       contentArea.innerHTML = '<h2>Página não encontrada</h2>';
@@ -210,7 +202,12 @@ function fetchDashboardData() {
 
 // Create hours by month chart
 function createHoursChart(data) {
-  const ctx = document.getElementById('hours-chart').getContext('2d');
+  const canvas = document.getElementById('hours-chart');
+  if (!canvas) {
+    console.warn('hours-chart canvas not found; skipping chart render');
+    return;
+  }
+  const ctx = canvas.getContext('2d');
   
   // Usar apenas dados reais
   const chartData = {
@@ -240,7 +237,12 @@ function createHoursChart(data) {
 
 // Create activities by origin chart
 function createOriginChart(data) {
-  const ctx = document.getElementById('origin-chart').getContext('2d');
+  const canvas = document.getElementById('origin-chart');
+  if (!canvas) {
+    console.warn('origin-chart canvas not found; skipping chart render');
+    return;
+  }
+  const ctx = canvas.getContext('2d');
   
   // Usar apenas dados reais
   const chartData = {
@@ -506,13 +508,38 @@ function loadActivities(container) {
     }
   }, 100);
   
-  document.getElementById('filters-form').addEventListener('submit', handleApplyFilters);
-  document.getElementById('clear-filters').addEventListener('click', handleClearFilters);
-  document.getElementById('new-responsible-btn').addEventListener('click', () => {
-    const modal = new bootstrap.Modal(document.getElementById('new-responsible-modal'));
-    modal.show();
-  });
-  document.getElementById('save-responsible-btn').addEventListener('click', handleAddResponsible);
+  const filtersFormEl = document.getElementById('filters-form');
+  if (filtersFormEl) {
+    filtersFormEl.addEventListener('submit', handleApplyFilters);
+  } else {
+    console.error('Elemento filters-form não encontrado');
+  }
+  const clearFiltersEl = document.getElementById('clear-filters');
+  if (clearFiltersEl) {
+    clearFiltersEl.addEventListener('click', handleClearFilters);
+  } else {
+    console.error('Elemento clear-filters não encontrado');
+  }
+  const newResponsibleBtnEl = document.getElementById('new-responsible-btn');
+  if (newResponsibleBtnEl) {
+    newResponsibleBtnEl.addEventListener('click', () => {
+      const modalEl = document.getElementById('new-responsible-modal');
+      if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+      } else {
+        console.error('Modal new-responsible-modal não encontrado');
+      }
+    });
+  } else {
+    console.error('Botão new-responsible-btn não encontrado');
+  }
+  const saveResponsibleBtnEl = document.getElementById('save-responsible-btn');
+  if (saveResponsibleBtnEl) {
+    saveResponsibleBtnEl.addEventListener('click', handleAddResponsible);
+  } else {
+    console.error('Botão save-responsible-btn não encontrado');
+  }
   
   // Load users for responsible dropdown
   loadUsers();
@@ -854,26 +881,31 @@ function loadUsers() {
   const responsibleSelect = document.getElementById('responsible');
   const filterResponsibleSelect = document.getElementById('filter-responsible');
   
-  if (!responsibleSelect || !filterResponsibleSelect) {
-    console.error('Elementos de seleção de responsáveis não encontrados');
+  console.log('loadUsers() chamado');
+  if (!responsibleSelect && !filterResponsibleSelect) {
+    console.error('Nenhum select de responsáveis encontrado (responsible/filter-responsible)');
     return;
   }
   
   // Limpar opções existentes, mantendo apenas a primeira (placeholder)
-  while (responsibleSelect.options.length > 1) {
-    responsibleSelect.remove(1);
-  }
-  
-  while (filterResponsibleSelect.options.length > 1) {
-    filterResponsibleSelect.remove(1);
-  }
-  
-  fetch('/api/users', {
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
+  if (responsibleSelect) {
+    while (responsibleSelect.options.length > 1) {
+      responsibleSelect.remove(1);
     }
-  })
+  }
+  if (filterResponsibleSelect) {
+    while (filterResponsibleSelect.options.length > 1) {
+      filterResponsibleSelect.remove(1);
+    }
+  }
+  
+  const headers = {};
+  const token = localStorage.getItem('token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  
+  fetch('/api/users', { headers })
     .then(response => {
+      console.log('Resposta de /api/users status:', response.status);
       if (!response.ok) {
         throw new Error('Erro ao carregar usuários: ' + response.status);
       }
@@ -882,21 +914,24 @@ function loadUsers() {
     .then(data => {
       console.log('Usuários carregados:', data);
       if (Array.isArray(data)) {
-        // Add users to responsible dropdown
         data.forEach(user => {
-          const option = document.createElement('option');
-          option.value = user.id;
-          option.textContent = user.name;
-          
-          responsibleSelect.appendChild(option.cloneNode(true));
-          
-          // Also add to filter dropdown
-          filterResponsibleSelect.appendChild(option.cloneNode(true));
+          if (responsibleSelect) {
+            const option = document.createElement('option');
+            option.value = user.id;
+            option.textContent = user.name;
+            responsibleSelect.appendChild(option);
+          }
+          if (filterResponsibleSelect) {
+            const option2 = document.createElement('option');
+            option2.value = user.id;
+            option2.textContent = user.name;
+            filterResponsibleSelect.appendChild(option2);
+          }
         });
       }
     })
     .catch(error => {
-      console.error('Error loading users:', error);
+      console.error('Erro ao carregar usuários:', error);
     });
 }
 
@@ -1051,6 +1086,53 @@ function handleDeleteActivity(activityId) {
         alert('Erro ao conectar ao servidor');
       });
   }
+}
+
+// Settings page with tabs (Webhook and Users)
+function loadSettings(container) {
+  container.innerHTML = `
+    <h2 class="mb-4">Configurações</h2>
+    <ul class="nav nav-tabs" id="settings-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <a class="nav-link active" href="#" data-tab="webhook" role="tab">Webhook</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link" href="#" data-tab="users" role="tab">Usuários</a>
+      </li>
+    </ul>
+    <div class="tab-content pt-3">
+      <div id="tab-webhook" class="tab-pane active" role="tabpanel"></div>
+      <div id="tab-users" class="tab-pane" role="tabpanel" style="display:none;"></div>
+    </div>
+  `;
+
+  const webhookPane = document.getElementById('tab-webhook');
+  const usersPane = document.getElementById('tab-users');
+  
+  // Load default tab content
+  loadWebhookConfig(webhookPane);
+
+  // Tab switching
+  document.querySelectorAll('#settings-tabs .nav-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('#settings-tabs .nav-link').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+
+      const target = link.getAttribute('data-tab');
+      // hide all panes
+      webhookPane.style.display = 'none';
+      usersPane.style.display = 'none';
+
+      if (target === 'webhook') {
+        webhookPane.style.display = '';
+        loadWebhookConfig(webhookPane);
+      } else if (target === 'users') {
+        usersPane.style.display = '';
+        loadUsersSettings(usersPane);
+      }
+    });
+  });
 }
 
 // Load webhook configuration page
@@ -1259,7 +1341,7 @@ function loadReports(container) {
   container.innerHTML = '<h2>Relatórios</h2><p>Funcionalidade em desenvolvimento</p>';
 }
 
-function loadUsers(container) {
+function loadUsersSettings(container) {
   if (container) {
     container.innerHTML = '<h2>Usuários</h2><p>Funcionalidade em desenvolvimento</p>';
   }
