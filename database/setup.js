@@ -1,20 +1,21 @@
-import 'dotenv/config';
-import mariadb from 'mariadb';
-import bcrypt from 'bcryptjs';
+require('dotenv').config();
+const mariadb = require('mariadb');
+const bcrypt = require('bcryptjs');
 
 async function setupDatabase() {
   let conn;
   try {
     conn = await mariadb.createConnection({
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD
+      host: process.env.DB_HOST || 'localhost',
+      port: (process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306),
+      user: process.env.DB_USER || 'appuser',
+      password: process.env.DB_PASSWORD || 'apppassword'
     });
 
     // Create database if it doesn't exist
-    await conn.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME}`);
-    await conn.query(`USE ${process.env.DB_NAME}`);
+    const dbName = process.env.DB_NAME || 'atividades';
+    await conn.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
+    await conn.query(`USE ${dbName}`);
 
     // Create users table (roles: view/editor/admin) and can_login flag
     await conn.query(`
@@ -113,10 +114,11 @@ async function setupDatabase() {
         activity VARCHAR(255) NOT NULL,
         date DATE NOT NULL,
         duration VARCHAR(10) NOT NULL,
-        status ENUM('pendente', 'concluida') DEFAULT 'pendente',
+        status ENUM('pendente', 'em_execucao', 'concluida') DEFAULT 'pendente',
         priority ENUM('baixa', 'media', 'alta') DEFAULT 'media',
         responsible_id INT,
         created_by INT NULL,
+        due_date DATE NULL,
         observation TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -140,6 +142,47 @@ async function setupDatabase() {
       } catch (e) {
         console.warn('Skipping activities.created_by add:', e.message);
       }
+    }
+
+    // Ensure status enum includes 'em_execucao' in activities for legacy installs
+    try {
+      const [statusColInfo] = await conn.query(`
+        SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'activities' AND COLUMN_NAME = 'status'
+      `, [process.env.DB_NAME]);
+      const colType = statusColInfo ? String(statusColInfo.COLUMN_TYPE || '') : '';
+      const hasEmExecucao = colType.includes("'em_execucao'");
+      const hasPendente = colType.includes("'pendente'");
+      const hasConcluida = colType.includes("'concluida'");
+      if (!hasEmExecucao || !hasPendente || !hasConcluida) {
+        try {
+          await conn.query("ALTER TABLE activities MODIFY COLUMN status ENUM('pendente','em_execucao','concluida') DEFAULT 'pendente'");
+        } catch (e) {
+          console.warn('Skipping activities.status enum update:', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Activities status enum inspection/migration failed:', e.message);
+    }
+
+    // Ensure due_date column exists in activities
+    try {
+      const [dueDateColRow] = await conn.query(`
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ?
+          AND TABLE_NAME = 'activities'
+          AND COLUMN_NAME = 'due_date'
+      `, [process.env.DB_NAME]);
+      if (!dueDateColRow || Number(dueDateColRow.cnt) === 0) {
+        try {
+          await conn.query('ALTER TABLE activities ADD COLUMN due_date DATE NULL AFTER created_by');
+        } catch (e) {
+          console.warn('Skipping activities.due_date add:', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Activities due_date inspection/migration failed:', e.message);
     }
 
     // Indexes for performance

@@ -23,6 +23,11 @@ function loadApp() {
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="#" data-page="schedule">
+                <i class="bi bi-calendar3"></i> Cronograma
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="#" data-page="reports">
                 <i class="bi bi-file-earmark-bar-graph"></i> Relatórios
               </a>
@@ -97,6 +102,9 @@ function loadPage(page) {
       break;
     case 'activities':
       loadActivities(contentArea);
+      break;
+    case 'schedule':
+      loadSchedule(contentArea);
       break;
     case 'reports':
       loadReports(contentArea);
@@ -208,8 +216,50 @@ function fetchDashboardData() {
     });
 }
 
+// Util helpers for safe date parsing/formatting
+function parseDateSafe(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  const s = String(v);
+  // ISO
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return isNaN(dt) ? null : dt;
+  }
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function formatDateBR(v) {
+  const d = parseDateSafe(v);
+  return d ? d.toLocaleDateString('pt-BR') : '-';
+}
+
+function isoOrYmdToYmd(v) {
+  if (!v) return '';
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = parseDateSafe(s);
+  if (!d) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 // Create hours by month chart
 function createHoursChart(data) {
+  // Destroy existing chart instance to avoid 'Canvas is already in use'
+  if (window.__hoursChartInstance && typeof window.__hoursChartInstance.destroy === 'function') {
+    try { window.__hoursChartInstance.destroy(); } catch (_) {}
+    window.__hoursChartInstance = null;
+  }
   const canvas = document.getElementById('hours-chart');
   if (!canvas) {
     console.warn('hours-chart canvas not found; skipping chart render');
@@ -229,7 +279,7 @@ function createHoursChart(data) {
     }]
   };
   
-  new Chart(ctx, {
+  window.__hoursChartInstance = new Chart(ctx, {
     type: 'bar',
     data: chartData,
     options: {
@@ -245,6 +295,11 @@ function createHoursChart(data) {
 
 // Create activities by origin chart
 function createOriginChart(data) {
+  // Destroy existing chart instance to avoid reuse error
+  if (window.__originChartInstance && typeof window.__originChartInstance.destroy === 'function') {
+    try { window.__originChartInstance.destroy(); } catch (_) {}
+    window.__originChartInstance = null;
+  }
   const canvas = document.getElementById('origin-chart');
   if (!canvas) {
     console.warn('origin-chart canvas not found; skipping chart render');
@@ -275,7 +330,7 @@ function createOriginChart(data) {
     }]
   };
   
-  new Chart(ctx, {
+  window.__originChartInstance = new Chart(ctx, {
     type: 'pie',
     data: chartData,
     options: {
@@ -325,8 +380,14 @@ function loadActivities(container) {
               <label for="status" class="form-label">Status <span class="text-danger">*</span></label>
               <select class="form-select" id="status" required>
                 <option value="pendente">Pendente</option>
+                <option value="em_execucao">Em Execução</option>
                 <option value="concluida">Concluída</option>
               </select>
+            </div>
+
+            <div class="col-md-3" id="due-date-wrapper" style="display:none;">
+              <label for="due-date" class="form-label">Data para Finalização</label>
+              <input type="date" class="form-control" id="due-date">
             </div>
             
             <div class="col-md-3">
@@ -440,6 +501,7 @@ function loadActivities(container) {
               <select class="form-select" id="filter-status">
                 <option value="">Todos</option>
                 <option value="pendente">Pendente</option>
+                <option value="em_execucao">Em Execução</option>
                 <option value="concluida">Concluída</option>
               </select>
             </div>
@@ -475,7 +537,8 @@ function loadActivities(container) {
               <tr>
                 <th>Origem</th>
                 <th>Atividade</th>
-                <th>Data</th>
+                <th>Finalizada em</th>
+                <th>Finalizará em</th>
                 <th>Criada em</th>
                 <th>Atualizada em</th>
                 <th>Duração</th>
@@ -507,6 +570,22 @@ function loadActivities(container) {
     if (activityForm) {
       console.log('Formulário de atividade encontrado, adicionando evento');
       activityForm.addEventListener('submit', handleAddActivity);
+
+      // Mostrar/ocultar Data para Finalização conforme status
+      const statusSelect = document.getElementById('status');
+      const dueDateWrapper = document.getElementById('due-date-wrapper');
+      const updateDueDateVisibility = () => {
+        const val = statusSelect ? statusSelect.value : 'pendente';
+        if (val === 'pendente' || val === 'em_execucao') {
+          if (dueDateWrapper) dueDateWrapper.style.display = '';
+        } else {
+          if (dueDateWrapper) dueDateWrapper.style.display = 'none';
+        }
+      };
+      if (statusSelect) {
+        statusSelect.addEventListener('change', updateDueDateVisibility);
+        updateDueDateVisibility();
+      }
       
       // Adicionar evento diretamente ao botão também
       const addActivityBtn = document.getElementById('add-activity-btn');
@@ -607,6 +686,7 @@ function handleAddActivity(event) {
   const priority = document.getElementById('priority');
   const responsible = document.getElementById('responsible');
   const observation = document.getElementById('observation');
+  const dueDate = document.getElementById('due-date');
   
   if (!origin || !activity || !date || !duration || !status || !priority) {
     console.error('Campos obrigatórios não encontrados no formulário');
@@ -622,7 +702,8 @@ function handleAddActivity(event) {
     status: status.value,
     priority: priority.value,
     responsible_id: responsible ? (responsible.value || null) : null,
-    observation: observation ? observation.value : ''
+    observation: observation ? observation.value : '',
+    due_date: (status.value === 'pendente' || status.value === 'em_execucao') && dueDate ? (dueDate.value || null) : null
   };
   // Se papel for visualizador, garantir responsável como o próprio usuário
   try {
@@ -702,14 +783,21 @@ function loadActivitiesList(filters = {}) {
         data.forEach(activity => {
           const row = document.createElement('tr');
           
-          // Format date
-          const date = new Date(activity.date);
-          const formattedDate = date.toLocaleDateString('pt-BR');
-          
-          const createdAt = activity.created_at ? new Date(activity.created_at) : null;
-          const updatedAt = activity.updated_at ? new Date(activity.updated_at) : null;
+          // Format dates safely
+          // Finalizada em: usar data de atualização quando concluída; caso contrário, '-'
+          const updatedAt = parseDateSafe(activity.updated_at);
+          const finalizadaEm = activity.status === 'concluida' ? (updatedAt ? updatedAt.toLocaleDateString('pt-BR') : '-') : '-';
+          const createdAt = parseDateSafe(activity.created_at);
           const formattedCreated = createdAt ? createdAt.toLocaleString('pt-BR') : '-';
           const formattedUpdated = updatedAt ? updatedAt.toLocaleString('pt-BR') : '-';
+
+          // Finalizará em (due_date) e atraso
+          const due = parseDateSafe(activity.due_date);
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const dueStr = due ? due.toLocaleDateString('pt-BR') : '-';
+          const isOverdue = !!(due && activity.status !== 'concluida' && due.getTime() < today.getTime());
+          const dueClass = isOverdue ? 'text-danger fw-semibold' : '';
 
           // Renderizar botões de ação conforme papel
           let actionsHtml = '';
@@ -731,13 +819,14 @@ function loadActivitiesList(filters = {}) {
           row.innerHTML = `
             <td>${activity.origin}</td>
             <td>${activity.activity}</td>
-            <td>${formattedDate}</td>
+            <td>${finalizadaEm}</td>
+            <td class="${dueClass}">${dueStr}</td>
             <td>${formattedCreated}</td>
             <td>${formattedUpdated}</td>
             <td>${activity.duration}</td>
             <td>
-              <span class="status-badge ${activity.status === 'concluida' ? 'status-completed' : 'status-pending'}">
-                ${activity.status === 'concluida' ? 'Concluída' : 'Pendente'}
+              <span class="status-badge ${activity.status === 'concluida' ? 'status-completed' : (activity.status === 'em_execucao' ? 'status-inprogress' : 'status-pending')}">
+                ${activity.status === 'concluida' ? 'Concluída' : (activity.status === 'em_execucao' ? 'Em Execução' : 'Pendente')}
               </span>
             </td>
             <td>
@@ -1016,6 +1105,10 @@ function handleEditActivity(activityId) {
                       <input type="text" class="form-control" id="edit-duration-current" disabled>
                     </div>
                     <div class="mb-3">
+                      <label class="form-label" for="edit-date">Data</label>
+                      <input type="date" class="form-control" id="edit-date">
+                    </div>
+                    <div class="mb-3">
                       <label class="form-label">Adicionar duração (HH:MM ou minutos)</label>
                       <input type="text" class="form-control" id="edit-duration-add" placeholder="00:30 ou 30">
                       <small class="form-text text-muted">Esse valor será somado à duração atual.</small>
@@ -1024,8 +1117,13 @@ function handleEditActivity(activityId) {
                       <label class="form-label">Status</label>
                       <select class="form-select" id="edit-status">
                         <option value="pendente">Pendente</option>
+                        <option value="em_execucao">Em Execução</option>
                         <option value="concluida">Concluída</option>
                       </select>
+                    </div>
+                    <div class="mb-3" id="edit-due-date-wrapper" style="display:none;">
+                      <label class="form-label" for="edit-due-date">Data para Finalização</label>
+                      <input type="date" class="form-control" id="edit-due-date">
                     </div>
                     <div class="mb-3">
                       <label class="form-label">Prioridade</label>
@@ -1033,6 +1131,12 @@ function handleEditActivity(activityId) {
                         <option value="baixa">Baixa</option>
                         <option value="media">Média</option>
                         <option value="alta">Alta</option>
+                      </select>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label" for="edit-responsible">Responsável</label>
+                      <select class="form-select" id="edit-responsible">
+                        <option value="">Selecione um responsável</option>
                       </select>
                     </div>
                   </form>
@@ -1050,8 +1154,55 @@ function handleEditActivity(activityId) {
 
       // Populate fields
       document.getElementById('edit-duration-current').value = activity.duration || '00:00';
+      const editDateInput = document.getElementById('edit-date');
+      if (editDateInput) editDateInput.value = isoOrYmdToYmd(activity.date);
       document.getElementById('edit-status').value = activity.status || 'pendente';
       document.getElementById('edit-priority').value = activity.priority || 'media';
+      const editDueDateInput = document.getElementById('edit-due-date');
+      const editDueDateWrapper = document.getElementById('edit-due-date-wrapper');
+      if (editDueDateInput) editDueDateInput.value = activity.due_date || '';
+      const editStatusSelect = document.getElementById('edit-status');
+      const updateEditDueVisibility = () => {
+        const val = editStatusSelect ? editStatusSelect.value : 'pendente';
+        if (val === 'pendente' || val === 'em_execucao') {
+          if (editDueDateWrapper) editDueDateWrapper.style.display = '';
+        } else {
+          if (editDueDateWrapper) editDueDateWrapper.style.display = 'none';
+        }
+      };
+      if (editStatusSelect) {
+        editStatusSelect.addEventListener('change', updateEditDueVisibility);
+        updateEditDueVisibility();
+      }
+
+      // Carregar responsáveis existentes para o select de edição
+      const editRespSelect = document.getElementById('edit-responsible');
+      if (editRespSelect) {
+        const headers = {};
+        const token = localStorage.getItem('token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        fetch('/api/users', { headers })
+          .then(resp => resp.json())
+          .then(users => {
+            if (Array.isArray(users)) {
+              // Limpar opções (mantendo placeholder)
+              while (editRespSelect.options.length > 1) {
+                editRespSelect.remove(1);
+              }
+              users.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = u.name;
+                editRespSelect.appendChild(opt);
+              });
+              // Selecionar responsável atual
+              if (activity.responsible_id) {
+                editRespSelect.value = String(activity.responsible_id);
+              }
+            }
+          })
+          .catch(err => console.error('Erro ao carregar responsáveis (edição):', err));
+      }
 
       // Bind save button
       const saveBtn = document.getElementById('save-edit-activity');
@@ -1083,6 +1234,9 @@ function handleSaveEditActivity(activityId) {
   const addDurationRaw = document.getElementById('edit-duration-add').value;
   const status = document.getElementById('edit-status').value;
   const priority = document.getElementById('edit-priority').value;
+  const dueDateEl = document.getElementById('edit-due-date');
+  const editRespSelect = document.getElementById('edit-responsible');
+  const editDateEl = document.getElementById('edit-date');
 
   const duration_delta = parseDurationToMinutes(addDurationRaw);
 
@@ -1092,7 +1246,14 @@ function handleSaveEditActivity(activityId) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${localStorage.getItem('token')}`
     },
-    body: JSON.stringify({ duration_delta, status, priority })
+    body: JSON.stringify({ 
+      duration_delta, 
+      status, 
+      priority, 
+      responsible_id: editRespSelect ? (editRespSelect.value || null) : undefined,
+      date: editDateEl ? (editDateEl.value || undefined) : undefined,
+      due_date: (status === 'pendente' || status === 'em_execucao') && dueDateEl ? (dueDateEl.value || null) : null 
+    })
   })
     .then(response => response.json())
     .then(data => {
@@ -1428,6 +1589,302 @@ function handleTestWebhook() {
 // Placeholder functions for other pages
 function loadReports(container) {
   container.innerHTML = '<h2>Relatórios</h2><p>Funcionalidade em desenvolvimento</p>';
+}
+
+// Cronograma page (Calendário e Tabela)
+function loadSchedule(container) {
+  container.innerHTML = `
+    <h2 class="mb-4">Cronograma</h2>
+    <form id="schedule-filters" class="row g-2 align-items-end mb-3">
+      <div class="col-md-2">
+        <label class="form-label" for="sched-filter-origin">Origem</label>
+        <input type="text" class="form-control" id="sched-filter-origin" placeholder="Ex.: Email">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="sched-filter-activity">Atividade</label>
+        <input type="text" class="form-control" id="sched-filter-activity" placeholder="Ex.: Revisar">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="sched-filter-status">Status</label>
+        <select class="form-select" id="sched-filter-status">
+          <option value="">Todos</option>
+          <option value="pendente">Pendente</option>
+          <option value="em_execucao">Em Execução</option>
+          <option value="concluida">Concluída</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="sched-filter-priority">Prioridade</label>
+        <select class="form-select" id="sched-filter-priority">
+          <option value="">Todas</option>
+          <option value="baixa">Baixa</option>
+          <option value="media">Média</option>
+          <option value="alta">Alta</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="sched-filter-responsible">Responsável</label>
+        <select class="form-select" id="sched-filter-responsible">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="col-md-1 d-grid">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+      </div>
+    </form>
+    <ul class="nav nav-tabs" id="schedule-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <a class="nav-link active" href="#" data-tab="calendar" role="tab">Calendário</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link" href="#" data-tab="table" role="tab">Tabela</a>
+      </li>
+    </ul>
+    <div class="tab-content pt-3">
+      <div id="tab-calendar" class="tab-pane active" role="tabpanel"></div>
+      <div id="tab-table" class="tab-pane" role="tabpanel" style="display:none;"></div>
+    </div>
+  `;
+
+  // Populate responsible options
+  fetch('/api/users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }})
+    .then(r => r.json())
+    .then(list => {
+      const sel = document.getElementById('sched-filter-responsible');
+      if (sel && Array.isArray(list)) {
+        list.forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.name;
+          sel.appendChild(opt);
+        });
+      }
+    })
+    .catch(() => {});
+
+  // Filters form submit
+  const filtersForm = document.getElementById('schedule-filters');
+  if (filtersForm) {
+    filtersForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const activeTab = document.querySelector('#schedule-tabs .nav-link.active')?.getAttribute('data-tab') || 'calendar';
+      if (activeTab === 'calendar') renderScheduleCalendar(); else renderScheduleTable();
+    });
+  }
+
+  renderScheduleCalendar();
+  document.querySelectorAll('#schedule-tabs .nav-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('#schedule-tabs .nav-link').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+      const target = link.getAttribute('data-tab');
+      const cal = document.getElementById('tab-calendar');
+      const tbl = document.getElementById('tab-table');
+      cal.style.display = 'none';
+      tbl.style.display = 'none';
+      cal.classList.remove('active');
+      tbl.classList.remove('active');
+      if (target === 'calendar') {
+        cal.style.display = '';
+        cal.classList.add('active');
+        renderScheduleCalendar();
+      } else {
+        tbl.style.display = '';
+        tbl.classList.add('active');
+        renderScheduleTable();
+      }
+    });
+  });
+}
+
+function getScheduleFilters() {
+  const origin = document.getElementById('sched-filter-origin')?.value || '';
+  const activity = document.getElementById('sched-filter-activity')?.value || '';
+  const status = document.getElementById('sched-filter-status')?.value || '';
+  const priority = document.getElementById('sched-filter-priority')?.value || '';
+  const responsible_id = document.getElementById('sched-filter-responsible')?.value || '';
+  return { origin, activity, status, priority, responsible_id };
+}
+
+function renderScheduleCalendar(dateCtx) {
+  const container = document.getElementById('tab-calendar');
+  if (!container) return;
+  const now = dateCtx instanceof Date ? dateCtx : new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = lastDay.getDate();
+
+  container.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <button class="btn btn-sm btn-outline-secondary" id="prev-month">Anterior</button>
+      <h5 class="mb-0">${firstDay.toLocaleString('pt-BR', { month: 'long' })} / ${year}</h5>
+      <button class="btn btn-sm btn-outline-secondary" id="next-month">Próximo</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>Dom</th><th>Seg</th><th>Ter</th><th>Qua</th><th>Qui</th><th>Sex</th><th>Sáb</th>
+          </tr>
+        </thead>
+        <tbody id="calendar-body"></tbody>
+      </table>
+    </div>
+  `;
+
+  const bodyEl = document.getElementById('calendar-body');
+  let cu = null; try { cu = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  const isAdmin = !!(cu && cu.role === 'admin');
+  const baseUrl = '/api/activities';
+  const url = isAdmin ? baseUrl : `${baseUrl}?responsible_id=${encodeURIComponent(cu && cu.id ? cu.id : '')}`;
+
+  fetch(url, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+  })
+    .then(r => r.json())
+    .then(list => {
+      let activities = Array.isArray(list) ? list : [];
+      // Apply filters (origin/activity case-insensitive)
+      const f = getScheduleFilters();
+      const oi = f.origin.trim().toLowerCase();
+      const ai = f.activity.trim().toLowerCase();
+      activities = activities.filter(a => {
+        if (oi && !(String(a.origin || '').toLowerCase().includes(oi))) return false;
+        if (ai && !(String(a.activity || '').toLowerCase().includes(ai))) return false;
+        if (f.status && a.status !== f.status) return false;
+        if (f.priority && a.priority !== f.priority) return false;
+        if (f.responsible_id && String(a.responsible_id || '') !== String(f.responsible_id)) return false;
+        return true;
+      });
+      const byDay = {};
+      for (let d = 1; d <= daysInMonth; d++) {
+        byDay[d] = [];
+      }
+      activities.forEach(a => {
+        if (a.due_date) {
+          const due = parseDateSafe(a.due_date);
+          if (due && due.getFullYear() === year && due.getMonth() === month) {
+            const dueDD = due.getDate();
+            byDay[dueDD] = byDay[dueDD] || [];
+            byDay[dueDD].push(a);
+          }
+        }
+      });
+
+      let html = '';
+      let dayCounter = 1;
+      for (let row = 0; row < 6; row++) {
+        let rowHtml = '<tr>';
+        for (let col = 0; col < 7; col++) {
+          const cellIndex = row * 7 + col;
+          const isLeadingEmpty = cellIndex < startWeekday;
+          if (isLeadingEmpty || dayCounter > daysInMonth) {
+            rowHtml += '<td class="bg-light"></td>';
+          } else {
+            const acts = byDay[dayCounter] || [];
+            const items = acts.map(a => {
+              const st = a.status === 'concluida' ? 'Concluída' : (a.status === 'em_execucao' ? 'Em Execução' : 'Pendente');
+              const resp = a.responsible_name ? ` - ${a.responsible_name}` : '';
+              const due = parseDateSafe(a.due_date);
+              const today = new Date(); today.setHours(0,0,0,0);
+              const isOverdue = !!(due && a.status !== 'concluida' && due.getTime() < today.getTime());
+              const cls = isOverdue ? 'text-danger fw-semibold' : '';
+              return `<div class="small ${cls}">${a.activity}${resp} <span class="badge bg-secondary">${st}</span></div>`;
+            }).join('');
+            rowHtml += `<td style="vertical-align: top;"><div class="fw-bold">${dayCounter}</div>${items}</td>`;
+            dayCounter++;
+          }
+        }
+        rowHtml += '</tr>';
+        html += rowHtml;
+      }
+      bodyEl.innerHTML = html;
+
+      document.getElementById('prev-month').onclick = () => {
+        renderScheduleCalendar(new Date(year, month - 1, 1));
+      };
+      document.getElementById('next-month').onclick = () => {
+        renderScheduleCalendar(new Date(year, month + 1, 1));
+      };
+    })
+    .catch(err => {
+      console.error('Erro ao carregar atividades para o calendário:', err);
+      bodyEl.innerHTML = '<tr><td colspan="7" class="text-danger text-center">Erro ao carregar atividades</td></tr>';
+    });
+}
+
+function renderScheduleTable() {
+  const container = document.getElementById('tab-table');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Origem</th>
+            <th>Atividade</th>
+            <th>Finalizará em</th>
+            <th>Status</th>
+            <th>Responsável</th>
+          </tr>
+        </thead>
+        <tbody id="schedule-table-body"></tbody>
+      </table>
+    </div>
+  `;
+
+  const bodyEl = document.getElementById('schedule-table-body');
+  let cu = null; try { cu = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
+  const isAdmin = !!(cu && cu.role === 'admin');
+  const baseUrl = '/api/activities';
+  const url = isAdmin ? baseUrl : `${baseUrl}?responsible_id=${encodeURIComponent(cu && cu.id ? cu.id : '')}`;
+  fetch(url, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+  })
+    .then(r => r.json())
+    .then(list => {
+      let activities = Array.isArray(list) ? list : [];
+      // Apply filters (origin/activity case-insensitive)
+      const f = getScheduleFilters();
+      const oi = f.origin.trim().toLowerCase();
+      const ai = f.activity.trim().toLowerCase();
+      activities = activities.filter(a => {
+        if (oi && !(String(a.origin || '').toLowerCase().includes(oi))) return false;
+        if (ai && !(String(a.activity || '').toLowerCase().includes(ai))) return false;
+        if (f.status && a.status !== f.status) return false;
+        if (f.priority && a.priority !== f.priority) return false;
+        if (f.responsible_id && String(a.responsible_id || '') !== String(f.responsible_id)) return false;
+        return true;
+      });
+      if (activities.length === 0) {
+        bodyEl.innerHTML = '<tr><td colspan="5" class="text-center">Nenhuma atividade encontrada</td></tr>';
+        return;
+      }
+      bodyEl.innerHTML = activities.map(a => {
+        const dd = a.due_date ? parseDateSafe(a.due_date) : null;
+        const ddStr = dd ? dd.toLocaleDateString('pt-BR') : '-';
+        const today = new Date(); today.setHours(0,0,0,0);
+        const overdueCls = (dd && a.status !== 'concluida' && dd.getTime() < today.getTime()) ? 'text-danger fw-semibold' : '';
+        const st = a.status === 'concluida' ? 'Concluída' : (a.status === 'em_execucao' ? 'Em Execução' : 'Pendente');
+        return `
+          <tr>
+            <td>${a.origin}</td>
+            <td>${a.activity}</td>
+            <td class="${overdueCls}">${ddStr}</td>
+            <td>${st}</td>
+            <td>${a.responsible_name || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    })
+    .catch(err => {
+      console.error('Erro ao carregar atividades para a tabela:', err);
+      bodyEl.innerHTML = '<tr><td colspan="6" class="text-danger text-center">Erro ao carregar atividades</td></tr>';
+    });
 }
 
 function loadUsersSettings(container) {

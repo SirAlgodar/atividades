@@ -10,12 +10,19 @@ Aplicação web para gerenciamento de atividades com cadastro, edição, filtros
 - Configuração de `Webhook` para envio automático (opcional).
 
 ### Novidades recentes
-- Login aceita `Usuário ou Email` no mesmo campo e prioriza o nome.
-- Comparação de login é case-insensitive e com `trim` (sem espaços nas extremidades).
-- Em caso de múltiplos usuários com o mesmo nome, o sistema prioriza quem está `can_login = true` e `active = true`.
+- Login aceita `Usuário ou Email` no mesmo campo (case-insensitive com `trim`) e prioriza o nome.
 - Reset de senha redefine para o próprio nome do usuário (com `trim`).
 - Papel `Visualizador` pode criar atividades, sempre atribuídas a si mesmo.
-- Melhorias de estabilidade e logs de diagnóstico na autenticação (facilitam suporte a erro 401).
+- Permissões no Cronograma/Atividades: não-admins veem apenas atividades que criaram ou pelas quais são responsáveis; admins veem todas.
+- Cronograma (Calendário e Tabela):
+  - Filtros por `Origem`, `Atividade`, `Status`, `Prioridade` e `Responsável` (origem/atividade são case-insensitive).
+  - Itens vencidos e não concluídos destacados em vermelho.
+  - Calendário exibe somente atividades com `due_date`, com título "Atividade – Responsável" e badge de status.
+  - Tabela unifica a coluna de prazo como `Finalizará em` (usa `due_date`) e mantém `Finalizada em` para concluídas.
+- Webhook:
+  - Teste realiza POST real com timeout de 10s e tratamento de erro detalhado.
+  - Envio manual monta payload conforme campos configurados e faz POST real.
+  - Envio automático ao criar/editar atividades quando `auto_send` está ativo.
 
 ## Requisitos
 - Node.js >= 18
@@ -80,6 +87,8 @@ JWT_EXPIRATION=1d
 - `DELETE /api/activities/:id`: exclui uma atividade.
 - `GET /api/activities/summary/dashboard`: dados de KPIs e gráficos do dashboard.
 - `GET/POST /api/webhook/config`: leitura e gravação da configuração de webhook.
+- `POST /api/webhook/test`: testa a entrega realizando POST real para a URL informada.
+- `POST /api/webhook/send`: envia dados de uma atividade específica para o webhook ativo.
 - `POST /api/reports/export`: exporta relatório (endpoint mock).
  - `GET /api/users`: lista usuários.
  - `POST /api/users`: cria usuário (por padrão, senha = nome, com `trim`).
@@ -107,13 +116,29 @@ JWT_EXPIRATION=1d
 - Copie o `name` exatamente como aparece na lista de usuários para evitar espaços invisíveis.
 - Em caso de nomes duplicados, o login seleciona quem pode logar e está ativo; considere padronizar nomes únicos para usuários com acesso.
 
+## Permissões e Escopo de Dados
+- Perfis: `admin`, `edit` (editor), `view` (visualizador).
+- Listagem (`GET /api/activities`):
+  - `admin`: vê todas as atividades.
+  - `edit`/`view`: vê somente atividades que criou ou pelas quais é responsável.
+- Criação:
+  - `view`: pode criar, e a atividade é atribuída automaticamente a si mesmo.
+- Edição:
+  - `view`: não pode editar.
+  - `edit`: pode editar quando é criador ou responsável.
+
 ## Webhook (Opcional)
 - Configure em "Configurações → Webhook" dentro da aplicação.
-- Campos disponíveis: `title`, `description`, `status`, `origin`, `responsible_id`, `sector_id`, `duration_minutes`.
+- Payload respeita os campos selecionados e inclui sempre: `id`, `due_date`, `created_at`, `updated_at`.
+- Campos selecionáveis: `origin`, `activity`, `date`, `duration`, `status`, `priority`, `observation`, `responsible` (objeto `{ id, name }`).
+- Headers: `Content-Type: application/json`, `X-Webhook-Source: atividades-app`, `X-Event: activity.created|activity.updated`.
+- Timeout padrão: 10s. Respostas não-2xx e erros são logados sem bloquear a operação.
 
 ### Envio automático
-- Se habilitado `auto_send=true` na configuração, o sistema registra a intenção de envio ao criar atividades.
-- Endpoint de teste disponível em `POST /api/webhook/test`.
+- Com `active=true` e `auto_send=true`, o backend envia automaticamente no `POST /api/activities` (criação) e `PUT /api/activities/:id` (edição).
+- Endpoints de apoio:
+  - `POST /api/webhook/test`: POST real com payload simples `{ ping: 'ok', timestamp }` para validar conectividade.
+  - `POST /api/webhook/send`: POST real de uma atividade específica (respeita campos selecionados).
 
 ---
 

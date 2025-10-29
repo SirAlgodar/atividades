@@ -123,6 +123,11 @@ body {
   color: #155724;
 }
 
+.status-inprogress {
+  background-color: #cfe2ff;
+  color: #084298;
+}
+
 .priority-high {
   background-color: #f8d7da;
   color: #721c24;
