@@ -555,6 +555,25 @@ function loadActivities(container) {
         </div>
       </div>
     </div>
+
+    <!-- Modal de confirmação de exclusão de atividade -->
+    <div id="confirm-delete-activity-modal" class="modal" tabindex="-1" style="display:none;">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Confirmar exclusão</h5>
+            <button type="button" class="btn-close" id="confirm-delete-activity-close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Tem certeza que deseja excluir esta atividade?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="cancel-delete-activity-btn">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="confirm-delete-activity-btn">Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
   
   // Controle de UI por papel
@@ -659,6 +678,22 @@ function loadActivities(container) {
   
   // Load activities list
   loadActivitiesList();
+
+  // Listeners do modal de confirmação de exclusão de atividade
+  const confirmDeleteModalEl = document.getElementById('confirm-delete-activity-modal');
+  const confirmDeleteBtnEl = document.getElementById('confirm-delete-activity-btn');
+  const cancelDeleteBtnEl = document.getElementById('cancel-delete-activity-btn');
+  const closeDeleteBtnEl = document.getElementById('confirm-delete-activity-close');
+  if (cancelDeleteBtnEl) cancelDeleteBtnEl.addEventListener('click', () => { if (confirmDeleteModalEl) confirmDeleteModalEl.style.display = 'none'; });
+  if (closeDeleteBtnEl) closeDeleteBtnEl.addEventListener('click', () => { if (confirmDeleteModalEl) confirmDeleteModalEl.style.display = 'none'; });
+  if (confirmDeleteBtnEl) {
+    confirmDeleteBtnEl.addEventListener('click', () => {
+      const id = confirmDeleteBtnEl.getAttribute('data-activity-id');
+      if (id) {
+        handleDeleteActivity(id);
+      }
+    });
+  }
 }
 
 // Handle add activity form submission
@@ -847,7 +882,15 @@ function loadActivitiesList(filters = {}) {
         });
         
         document.querySelectorAll('.delete-activity').forEach(button => {
-          button.addEventListener('click', () => handleDeleteActivity(button.getAttribute('data-id')));
+          button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = button.getAttribute('data-id');
+            const confirmDeleteBtnEl = document.getElementById('confirm-delete-activity-btn');
+            const confirmModalEl = document.getElementById('confirm-delete-activity-modal');
+            if (confirmDeleteBtnEl) confirmDeleteBtnEl.setAttribute('data-activity-id', id || '');
+            if (confirmModalEl) confirmModalEl.style.display = 'block';
+          });
         });
       } else {
         // Show error message
@@ -1276,30 +1319,32 @@ function handleSaveEditActivity(activityId) {
     });
 }
 
-// Handle delete activity
+// Handle delete activity (somente chamada após confirmação no modal)
 function handleDeleteActivity(activityId) {
-  if (confirm('Tem certeza que deseja excluir esta atividade?')) {
-    fetch(`/api/activities/${activityId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+  fetch(`/api/activities/${activityId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  })
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const msg = (data && data.message) ? data.message : 'Erro ao excluir atividade';
+        throw new Error(msg);
       }
+      return data;
     })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          // Reload activities list
-          loadActivitiesList();
-          alert('Atividade excluída com sucesso!');
-        } else {
-          alert(data.message || 'Erro ao excluir atividade');
-        }
-      })
-      .catch(error => {
-        console.error('Error deleting activity:', error);
-        alert('Erro ao conectar ao servidor');
-      });
-  }
+    .then(data => {
+      const modalEl = document.getElementById('confirm-delete-activity-modal');
+      if (modalEl) modalEl.style.display = 'none';
+      loadActivitiesList();
+      alert('Atividade excluída com sucesso!');
+    })
+    .catch(error => {
+      console.error('Error deleting activity:', error);
+      alert(error.message || 'Erro ao conectar ao servidor');
+    });
 }
 
 // Settings page with tabs (Webhook and Users)
@@ -1313,15 +1358,20 @@ function loadSettings(container) {
       <li class="nav-item" role="presentation">
         <a class="nav-link" href="#" data-tab="users" role="tab">Usuários</a>
       </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link" href="#" data-tab="responsaveis" role="tab">Responsáveis</a>
+      </li>
     </ul>
     <div class="tab-content pt-3">
       <div id="tab-webhook" class="tab-pane active" role="tabpanel"></div>
       <div id="tab-users" class="tab-pane" role="tabpanel" style="display:none;"></div>
+      <div id="tab-responsaveis" class="tab-pane" role="tabpanel" style="display:none;"></div>
     </div>
   `;
 
   const webhookPane = document.getElementById('tab-webhook');
   const usersPane = document.getElementById('tab-users');
+  const responsaveisPane = document.getElementById('tab-responsaveis');
   let currentUser = null;
   try { currentUser = JSON.parse(localStorage.getItem('currentUser')); } catch (e) {}
   let isAdmin = !!(currentUser && currentUser.role === 'admin');
@@ -1334,18 +1384,26 @@ function loadSettings(container) {
           isAdmin = true;
           const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
           if (usersTabLink) usersTabLink.parentElement.style.display = '';
+          const respTabLink = document.querySelector('a.nav-link[data-tab="responsaveis"]');
+          if (respTabLink) respTabLink.parentElement.style.display = '';
         } else {
           const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
           if (usersTabLink) usersTabLink.parentElement.style.display = 'none';
+          const respTabLink = document.querySelector('a.nav-link[data-tab="responsaveis"]');
+          if (respTabLink) respTabLink.parentElement.style.display = 'none';
         }
       })
       .catch(() => {
         const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
         if (usersTabLink) usersTabLink.parentElement.style.display = 'none';
+        const respTabLink = document.querySelector('a.nav-link[data-tab="responsaveis"]');
+        if (respTabLink) respTabLink.parentElement.style.display = 'none';
       });
   } else {
     const usersTabLink = document.querySelector('a.nav-link[data-tab="users"]');
     if (usersTabLink) usersTabLink.parentElement.style.display = '';
+    const respTabLink = document.querySelector('a.nav-link[data-tab="responsaveis"]');
+    if (respTabLink) respTabLink.parentElement.style.display = '';
   }
   
   // Load default tab content
@@ -1362,9 +1420,11 @@ function loadSettings(container) {
       // hide all panes
       webhookPane.style.display = 'none';
       usersPane.style.display = 'none';
+      responsaveisPane.style.display = 'none';
       // garantir conformidade com Bootstrap: remover classe active de panes
       webhookPane.classList.remove('active');
       usersPane.classList.remove('active');
+      responsaveisPane.classList.remove('active');
 
       if (target === 'webhook') {
         webhookPane.style.display = '';
@@ -1379,6 +1439,16 @@ function loadSettings(container) {
           usersPane.style.display = '';
           usersPane.classList.add('active');
           usersPane.innerHTML = '<p class="text-muted">Sem permissão para acessar esta aba.</p>';
+        }
+      } else if (target === 'responsaveis') {
+        if (isAdmin) {
+          responsaveisPane.style.display = '';
+          responsaveisPane.classList.add('active');
+          loadResponsaveisSettings(responsaveisPane);
+        } else {
+          responsaveisPane.style.display = '';
+          responsaveisPane.classList.add('active');
+          responsaveisPane.innerHTML = '<p class="text-muted">Sem permissão para acessar esta aba.</p>';
         }
       }
     });
@@ -2196,4 +2266,281 @@ function loadUsersSettings(container) {
 
 function loadImportExport(container) {
   container.innerHTML = '<h2>Importação/Exportação</h2><p>Funcionalidade em desenvolvimento</p>';
+}
+
+// Aba de Responsáveis (sem acesso)
+function loadResponsaveisSettings(container) {
+  if (!container) return;
+  container.innerHTML = `
+    <h4 class="mb-3">Responsáveis (sem acesso)</h4>
+    <div class="mb-3">
+      <form id="new-resp-form" class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Nome</label>
+          <input type="text" class="form-control" id="resp-name" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Email (opcional)</label>
+          <input type="email" class="form-control" id="resp-email" />
+        </div>
+        <div class="col-12 text-end">
+          <button type="submit" class="btn btn-primary">Adicionar Responsável</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Email</th>
+            <th>Ativo</th>
+            <th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="responsaveis-list"></tbody>
+      </table>
+    </div>
+
+    <!-- Modal de edição de responsável -->
+    <div id="edit-resp-modal" class="modal" tabindex="-1" style="display:none;">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar Responsável</h5>
+            <button type="button" class="btn-close" id="edit-resp-close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="edit-resp-form" class="row g-3">
+              <input type="hidden" id="edit-resp-id" />
+              <input type="hidden" id="edit-resp-role" />
+              <input type="hidden" id="edit-resp-can-login" />
+              <div class="col-md-6">
+                <label class="form-label">Nome</label>
+                <input type="text" id="edit-resp-name" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Email (opcional)</label>
+                <input type="email" id="edit-resp-email" class="form-control" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Ativo</label>
+                <select id="edit-resp-active" class="form-select">
+                  <option value="true">Sim</option>
+                  <option value="false">Não</option>
+                </select>
+              </div>
+              <div class="col-12 d-flex justify-content-between mt-3">
+                <button type="button" class="btn btn-outline-danger" id="delete-resp-btn">Deletar</button>
+                <button type="submit" class="btn btn-primary">Salvar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmação de exclusão -->
+    <div id="confirm-delete-resp-modal" class="modal" tabindex="-1" style="display:none;">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Confirmar exclusão</h5>
+            <button type="button" class="btn-close" id="confirm-delete-resp-close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Tem certeza que deseja deletar este responsável?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="cancel-delete-resp-btn">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="confirm-delete-resp-btn">Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Carregar lista de responsáveis (can_login = false)
+  fetch('/api/users', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }})
+    .then(r => r.json())
+    .then(users => {
+      const listEl = document.getElementById('responsaveis-list');
+      listEl.innerHTML = '';
+      const responsaveis = Array.isArray(users) ? users.filter(u => !u.can_login) : [];
+      if (responsaveis.length === 0) {
+        listEl.innerHTML = `
+          <tr>
+            <td colspan="4" class="text-muted text-center">Nenhum responsável cadastrado</td>
+          </tr>
+        `;
+        return;
+      }
+      responsaveis.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.name}</td>
+          <td>${u.email}</td>
+          <td>${u.active ? 'Sim' : 'Não'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary edit-resp-btn" data-id="${u.id}">Editar</button>
+          </td>
+        `;
+        listEl.appendChild(tr);
+      });
+
+      // Abrir modal de edição
+      document.querySelectorAll('.edit-resp-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const u = responsaveis.find(x => String(x.id) === String(id));
+          if (!u) return;
+          document.getElementById('edit-resp-id').value = u.id;
+          document.getElementById('edit-resp-name').value = u.name || '';
+          document.getElementById('edit-resp-email').value = u.email || '';
+          document.getElementById('edit-resp-active').value = u.active ? 'true' : 'false';
+          document.getElementById('edit-resp-role').value = u.role || 'view';
+          document.getElementById('edit-resp-can-login').value = u.can_login ? 'true' : 'false';
+          document.getElementById('edit-resp-modal').style.display = 'block';
+        });
+      });
+
+      const closeBtn = document.getElementById('edit-resp-close');
+      if (closeBtn) closeBtn.addEventListener('click', () => {
+        document.getElementById('edit-resp-modal').style.display = 'none';
+      });
+
+      const editForm = document.getElementById('edit-resp-form');
+      if (editForm) editForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = document.getElementById('edit-resp-id').value;
+        const payload = {
+          name: document.getElementById('edit-resp-name').value,
+          email: document.getElementById('edit-resp-email').value,
+          role: document.getElementById('edit-resp-role').value || 'view',
+          active: document.getElementById('edit-resp-active').value === 'true',
+          can_login: (document.getElementById('edit-resp-can-login').value === 'true') && false // garante false
+        };
+        payload.can_login = false; // força permanecer sem acesso
+        fetch(`/api/users/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(payload)
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp && resp.id) {
+              alert('Responsável atualizado com sucesso');
+              document.getElementById('edit-resp-modal').style.display = 'none';
+              loadResponsaveisSettings(container);
+            } else {
+              alert(resp.message || 'Erro ao atualizar responsável');
+            }
+          })
+          .catch(err => {
+            console.error('Erro ao atualizar responsável:', err);
+            alert('Erro ao conectar ao servidor');
+          });
+      });
+
+      const deleteBtn = document.getElementById('delete-resp-btn');
+      if (deleteBtn) deleteBtn.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-resp-modal');
+        if (confirmModal) confirmModal.style.display = 'block';
+      });
+
+      const confirmDeleteBtn = document.getElementById('confirm-delete-resp-btn');
+      if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', () => {
+        const id = document.getElementById('edit-resp-id').value;
+        const canLoginVal = document.getElementById('edit-resp-can-login').value;
+        const canLogin = String(canLoginVal).toLowerCase() === 'true';
+        if (!id) return;
+        if (canLogin) {
+          alert('Não é permitido excluir usuários com acesso pela aba Responsáveis');
+          return;
+        }
+        fetch(`/api/users/${id}?from=responsavel`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        })
+          .then(async r => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data && data.message ? data.message : 'Erro ao excluir responsável');
+            return data;
+          })
+          .then(resp => {
+            if (resp && resp.success) {
+              alert('Responsável excluído com sucesso');
+              document.getElementById('edit-resp-modal').style.display = 'none';
+              document.getElementById('confirm-delete-resp-modal').style.display = 'none';
+              loadResponsaveisSettings(container);
+            } else {
+              alert((resp && resp.message) || 'Erro ao excluir responsável');
+            }
+          })
+          .catch(err => {
+            console.error('Erro ao excluir responsável:', err);
+            alert(err.message || 'Erro ao conectar ao servidor');
+          });
+      });
+
+      const cancelDeleteBtn = document.getElementById('cancel-delete-resp-btn');
+      if (cancelDeleteBtn) cancelDeleteBtn.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-resp-modal');
+        if (confirmModal) confirmModal.style.display = 'none';
+      });
+      const confirmDeleteClose = document.getElementById('confirm-delete-resp-close');
+      if (confirmDeleteClose) confirmDeleteClose.addEventListener('click', () => {
+        const confirmModal = document.getElementById('confirm-delete-resp-modal');
+        if (confirmModal) confirmModal.style.display = 'none';
+      });
+    })
+    .catch(err => {
+      const listEl = document.getElementById('responsaveis-list');
+      if (listEl) {
+        listEl.innerHTML = `
+          <tr>
+            <td colspan="4" class="text-danger text-center">Erro ao carregar responsáveis</td>
+          </tr>
+        `;
+      }
+      console.error('Erro ao carregar responsáveis:', err);
+    });
+
+  // Submit novo responsável
+  const formEl = document.getElementById('new-resp-form');
+  formEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const payload = {
+      name: document.getElementById('resp-name').value,
+      email: document.getElementById('resp-email').value,
+      role: 'view',
+      active: true,
+      can_login: false
+    };
+    fetch('/api/users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(r => r.json())
+      .then(resp => {
+        if (resp.id) {
+          alert('Responsável criado');
+          loadResponsaveisSettings(container);
+        } else {
+          alert(resp.message || 'Erro ao criar responsável');
+        }
+      })
+      .catch(err => {
+        console.error('Erro ao criar responsável:', err);
+        alert('Erro ao conectar ao servidor');
+      });
+  });
 }

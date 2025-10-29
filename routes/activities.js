@@ -422,13 +422,15 @@ router.put('/:id', async (req, res) => {
     }
 
     // Return updated row including timestamps
-    const [updated] = await db.query(
+    const conn2 = await db.getConnection();
+    const [updated] = await conn2.query(
       `SELECT a.*, u.name as responsible_name 
        FROM activities a
        LEFT JOIN users u ON a.responsible_id = u.id
        WHERE a.id = ?`,
       [req.params.id]
     );
+    conn2.release();
     res.json(toPlain(updated));
   } catch (err) {
     console.error(err);

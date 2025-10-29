@@ -5,7 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:prod": "NODE_ENV=production node server.js",
     "dev": "nodemon server.js",
+    "dev:3100": "PORT=3100 nodemon server.js",
+    "dev:3101": "PORT=3101 nodemon server.js",
+    "dev:3102": "PORT=3102 nodemon server.js",
     "setup-db": "node database/setup.js"
   },
   "dependencies": {

@@ -23,6 +23,10 @@ Aplicação web para gerenciamento de atividades com cadastro, edição, filtros
   - Teste realiza POST real com timeout de 10s e tratamento de erro detalhado.
   - Envio manual monta payload conforme campos configurados e faz POST real.
   - Envio automático ao criar/editar atividades quando `auto_send` está ativo.
+ - Correções e melhorias recentes:
+   - Confirmação de exclusão de atividades com modal dedicado (evita exclusão antes de confirmar).
+   - Ajuste no retorno do PUT de atividades para evitar erro 500 após atualizar (retorno consistente com o registro atualizado).
+   - Proteção para exclusão de "Responsáveis": bloqueia remoção de usuários com login a partir da aba Responsáveis e impede exclusão de usuários vinculados a atividades (criadas/atribuídas), com mensagens claras.
 
 ## Requisitos
 - Node.js >= 18
@@ -66,7 +70,9 @@ JWT_EXPIRATION=1d
 
 ## Scripts Disponíveis
 - `npm run dev`: inicia o servidor com `nodemon` (usa `PORT`).
+- `npm run dev:3100` | `dev:3101` | `dev:3102`: inicia o servidor diretamente na porta indicada.
 - `npm start`: inicia o servidor com `node`.
+- `npm run start:prod`: inicia com `NODE_ENV=production`.
 - `npm run setup-db`: cria/atualiza tabelas e usuário admin padrão.
 
 ## Seeds padrão e índices (setup-db)
