@@ -40,7 +40,7 @@ async function setupDatabase() {
       WHERE TABLE_SCHEMA = ?
         AND TABLE_NAME = 'users'
         AND COLUMN_NAME = 'sector_id'
-    `, [process.env.DB_NAME]);
+    `, [dbName]);
     if (!sectorColRow || Number(sectorColRow.cnt) === 0) {
       try {
         await conn.query('ALTER TABLE users ADD COLUMN sector_id INT NULL');
@@ -56,7 +56,7 @@ async function setupDatabase() {
       WHERE TABLE_SCHEMA = ?
         AND TABLE_NAME = 'users'
         AND COLUMN_NAME = 'can_login'
-    `, [process.env.DB_NAME]);
+    `, [dbName]);
     if (!canLoginColRow || Number(canLoginColRow.cnt) === 0) {
       try {
         await conn.query('ALTER TABLE users ADD COLUMN can_login BOOLEAN DEFAULT false');
@@ -70,7 +70,7 @@ async function setupDatabase() {
       const [roleColInfo] = await conn.query(`
         SELECT COLUMN_TYPE FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
-      `, [process.env.DB_NAME]);
+      `, [dbName]);
       const columnType = roleColInfo ? String(roleColInfo.COLUMN_TYPE || '') : '';
       const hasUser = columnType.includes("'user'");
       const hasView = columnType.includes("'view'");
@@ -134,7 +134,7 @@ async function setupDatabase() {
       WHERE TABLE_SCHEMA = ?
         AND TABLE_NAME = 'activities'
         AND COLUMN_NAME = 'created_by'
-    `, [process.env.DB_NAME]);
+    `, [dbName]);
     if (!createdByColRow || Number(createdByColRow.cnt) === 0) {
       try {
         await conn.query('ALTER TABLE activities ADD COLUMN created_by INT NULL');
@@ -149,7 +149,7 @@ async function setupDatabase() {
       const [statusColInfo] = await conn.query(`
         SELECT COLUMN_TYPE FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'activities' AND COLUMN_NAME = 'status'
-      `, [process.env.DB_NAME]);
+      `, [dbName]);
       const colType = statusColInfo ? String(statusColInfo.COLUMN_TYPE || '') : '';
       const hasEmExecucao = colType.includes("'em_execucao'");
       const hasPendente = colType.includes("'pendente'");
@@ -173,7 +173,7 @@ async function setupDatabase() {
         WHERE TABLE_SCHEMA = ?
           AND TABLE_NAME = 'activities'
           AND COLUMN_NAME = 'due_date'
-      `, [process.env.DB_NAME]);
+      `, [dbName]);
       if (!dueDateColRow || Number(dueDateColRow.cnt) === 0) {
         try {
           await conn.query('ALTER TABLE activities ADD COLUMN due_date DATE NULL AFTER created_by');
@@ -255,7 +255,7 @@ async function setupDatabase() {
         AND TABLE_NAME = 'users'
         AND COLUMN_NAME = 'sector_id'
         AND REFERENCED_TABLE_NAME = 'sectors'
-    `, [process.env.DB_NAME]);
+    `, [dbName]);
 
     if (!fkExistsRow || Number(fkExistsRow.cnt) === 0) {
       try {
